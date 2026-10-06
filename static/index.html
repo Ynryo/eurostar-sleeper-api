@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radar Ferroviaire Européen — Eurostar & European Sleeper</title>
+    <!-- Google Fonts & Leaflet CSS -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+    <div id="app-container">
+        <!-- Sidebar -->
+        <div id="sidebar">
+            <div class="sidebar-header">
+                <div class="brand-row">
+                    <div class="brand-logo">
+                        <div class="brand-badge" id="brand-badge">🌐</div>
+                        <div class="brand-title">
+                            <h1 id="brand-title">Radar Ferroviaire</h1>
+                            <span id="brand-subtitle">Eurostar & European Sleeper</span>
+                        </div>
+                    </div>
+                    <div class="live-indicator">
+                        <div class="pulse-dot"></div>
+                        <span>EN DIRECT</span>
+                    </div>
+                </div>
+
+                <!-- Sélecteur de réseau (Menu déroulant) -->
+                <div class="network-selector-section">
+                    <div class="network-selector-header">
+                        <span class="network-selector-icon">🗺️</span>
+                        <label for="network-select" class="network-selector-label">Réseau à afficher</label>
+                    </div>
+                    <div class="custom-select-wrapper">
+                        <select id="network-select" class="network-dropdown">
+                            <option value="all">🌐 Tous les réseaux (Eurostar & Sleeper)</option>
+                            <option value="eurostar">🚆 Eurostar (Grande Vitesse & Transmanche)</option>
+                            <option value="european_sleeper">🌙 European Sleeper (Trains de nuit)</option>
+                        </select>
+                        <div class="select-chevron">▾</div>
+                    </div>
+                </div>
+
+                <!-- KPIs rapides -->
+                <div class="kpi-grid">
+                    <div class="kpi-card">
+                        <div class="kpi-value" id="kpi-running" style="color: var(--accent-cyan);">--</div>
+                        <div class="kpi-label">En circulation</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-value" id="kpi-ontime" style="color: var(--status-ontime);">--</div>
+                        <div class="kpi-label">À l'heure</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-value" id="kpi-delayed" style="color: var(--status-alert);">--</div>
+                        <div class="kpi-label">Retardés</div>
+                    </div>
+                    <div class="kpi-card">
+                        <div class="kpi-value" id="kpi-total" style="color: var(--text-primary);">--</div>
+                        <div class="kpi-label">Total du réseau</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contrôles & Filtres -->
+            <div class="controls-section">
+                <div class="search-box">
+                    <span class="search-icon">🔍</span>
+                    <input type="text" id="search-input" placeholder="Chercher un train (ex: 9143, ES 452), gare...">
+                </div>
+                <div class="filter-chips">
+                    <button class="filter-chip active" data-filter="all">Tous (actifs)</button>
+                    <button class="filter-chip" data-filter="running">En circulation</button>
+                    <button class="filter-chip" data-filter="departing">Départ &lt; 20 min</button>
+                    <button class="filter-chip" data-filter="delayed">En retard</button>
+                    <button class="filter-chip" data-filter="ontime">À l'heure</button>
+                    <button class="filter-chip" data-filter="skipped">Arrêts modifiés</button>
+                </div>
+            </div>
+
+            <!-- Liste dynamique des trains -->
+            <div class="train-list" id="train-list"></div>
+        </div>
+
+        <!-- Carte Leaflet -->
+        <div id="map"></div>
+
+        <!-- Contrôles flottants sur la carte -->
+        <div class="map-floating-panel">
+            <button class="map-btn" id="btn-recenter">
+                <span>🌐</span> Centrer la vue
+            </button>
+            <button class="map-btn" id="btn-refresh">
+                <span>🔄</span> Actualiser (<span id="refresh-timer">30s</span>)
+            </button>
+        </div>
+
+        <!-- Volet latéral droit de détail du train -->
+        <div id="detail-panel" class="detail-panel">
+            <div id="detail-content" style="height: 100%; display: flex; flex-direction: column;"></div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS & App JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script src="/app.js"></script>
+</body>
+</html>
