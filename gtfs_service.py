@@ -203,9 +203,9 @@ def build_eurostar_data():
             sampled.append(pts[-1])
         shapes_dict[sid] = sampled
 
-    # Corridors transmanche
-    hs1_pts = [] # Londres -> Lille Europe (HS1 + Tunnel)
-    lille_paris = rail_router.get_rail_segment(50.6389, 3.0758, 48.8809, 2.3553) # Lille Europe -> Paris Nord (LGV Nord)
+    # Corridors transmanche & interconnexions (Tracés continus 100% LGV via BRouter Rail)
+    hs1_pts = rail_router.get_rail_segment(51.5314, -0.1261, 50.6389, 3.0758) # Londres -> Lille Europe (HS1 + Tunnel)
+    # Slicing temporaire avant correction Lille
     lille_bruxelles = rail_router.get_rail_segment(50.6389, 3.0758, 50.8353, 4.3358) # Lille Europe -> Bruxelles-Midi (HSL 1)
 
     raw_5814 = shapes_raw.get('5814', [])
