@@ -3,6 +3,7 @@ from zoneinfo import ZoneInfo
 
 # Fuseaux horaires de référence
 EUROSTAR_TZ = ZoneInfo("Europe/Paris")
+EUROPEAN_SLEEPER_TZ = ZoneInfo("Europe/Brussels")
 
 # URLs et fichiers GTFS Eurostar
 EUROSTAR_RT_URL = "https://integration-storage.dm.eurostar.com/gtfs-prod/gtfs_rt_v2.bin"
@@ -10,6 +11,8 @@ EUROSTAR_STATIC_URL = "https://integration-storage.dm.eurostar.com/gtfs-prod/gtf
 STATIC_CACHE_FILE = "eurostar_gtfs_static.zip"
 
 # URLs et fichiers GTFS European Sleeper
+EUROPEAN_SLEEPER_STATIC_URL = "https://raw.githubusercontent.com/deryclem/european-sleeper-gtfs/main/gtfs-european-sleeper.zip"
+EUROPEAN_SLEEPER_CACHE_FILE = "european_sleeper_gtfs.zip"
 
 # Configuration réseau et serveur HTTP
 HOST = os.environ.get("HOST", "0.0.0.0")
