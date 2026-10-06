@@ -55,45 +55,49 @@ eurostar-sleeper-api/
 
 ## 🔌 Points d'Accès API
 
-### `GET /api/data`
-Retourne l'état complet du réseau ferroviaire en direct.
+La documentation interactive **OpenAPI / Swagger** est accessible directement sur `http://localhost:8080/docs`.
 
-#### Exemple de structure de réponse :
-```json
-{
-  "timestamp": "16:45:00",
-  "date": "06/10/2026",
-  "networks": [
-    { "id": "all", "name": "Tous les réseaux", "badge": "🌐" },
-    { "id": "eurostar", "name": "Eurostar", "badge": "🚆", "color": "#00d2ff" },
-    { "id": "european_sleeper", "name": "European Sleeper (Nuit)", "badge": "🌙", "color": "#a855f7" }
-  ],
-  "trains": [
-    {
-      "id": "9028-1006",
-      "num": "9028",
-      "headsign": "Paris Gare du Nord",
-      "origin": "Londres St Pancras Int.",
-      "destination": "Paris Gare du Nord",
-      "status": "RUNNING",
-      "status_label": "En circulation vers Paris Gare du Nord (65%)",
-      "lat": 50.1867,
-      "lon": 2.8708,
-      "bearing": 182.4,
-      "progress": 0.65,
-      "delay_sec": 120,
-      "delay_str": "+2 min",
-      "time_to_dep_sec": -5820,
-      "is_departing_soon": false,
-      "network": "eurostar",
-      "operator_name": "Eurostar",
-      "shape_id": "CORRIDOR_GBSPX_FRPNO"
-    }
-  ],
-  "stations": [...],
-  "shapes_dict": { ... }
-}
-```
+### 1. `GET /api/networks`
+Retourne la liste des réseaux gérés (Eurostar, European Sleeper) selon le standard Bus-Tracker.
+- **Réponse :** `[{"id": 1, "ref": "EUROSTAR", "name": "Eurostar", "color": "00D2FF", "regionId": 13, ...}]`
+
+### 2. `GET /api/networks/{network_id}/lines`
+Retourne la liste des lignes de transport associées au réseau.
+
+### 3. `GET /api/vehicle-journeys/markers`
+Flux temps réel allégé pour la cartographie, avec filtrage optionnel par bounding box.
+- **Query params :** `swLat`, `swLon`, `neLat`, `neLon` (optionnels)
+- **Réponse :**
+  ```json
+  {
+    "items": [
+      {
+        "id": "9028-1006",
+        "lineNumber": "9028",
+        "vehicleNumber": "9028",
+        "color": "#FFFFFF",
+        "fillColor": "#00D2FF",
+        "position": {
+          "latitude": 50.1867,
+          "longitude": 2.8708,
+          "bearing": 182.4,
+          "type": "COMPUTED"
+        }
+      }
+    ],
+    "at": "2026-10-06T15:58:00Z"
+  }
+  ```
+
+### 4. `GET /api/vehicle-journeys/{journey_id}`
+Fiche détaillée d'un trajet de train avec arrêts formatés selon la nomenclature NeTEx/UIC (`EUROSTAR:StopPoint:{CodeUIC}`), horaires ISO 8601, retards, voies/quais et position temps réel.
+
+### 5. `GET /api/vehicle-journeys/{journey_id}/paths` *(ou `/api/paths/{path_id}`)*
+Tracé ferroviaire 3D précis du train avec distance cumulée en mètres :
+- **Réponse :** `{"path": [[lat, lon, distanceTraveled], ...]}`
+
+### 6. `GET /api/data` *(Legacy)*
+Conservé pour rétrocompatibilité totale avec le frontend Leaflet existant.
 
 ---
 
