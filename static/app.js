@@ -136,7 +136,7 @@ function renderUI(data) {
     const rawTrains = data.trains || [];
 
     // Filtrage strict : seuls les trains en circulation et ceux qui partent dans moins de 20 min
-    const radarTrains = rawTrains;
+    const radarTrains = rawTrains.filter(t => isRadarEligible(t));
 
     // 1. Filtrage par réseau
     const networkTrains = radarTrains.filter(t => {
