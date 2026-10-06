@@ -1,4 +1,3 @@
-# Module GTFS-RT Live Radar avec filtrage actif des circulations
 import os
 import re
 import io
