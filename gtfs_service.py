@@ -203,8 +203,8 @@ def build_eurostar_data():
             sampled.append(pts[-1])
         shapes_dict[sid] = sampled
 
-    # Corridors transmanche & interconnexions (Tracés continus 100% LGV via BRouter Rail)
-    hs1_pts = rail_router.get_rail_segment(51.5314, -0.1261, 50.6389, 3.0758) # Londres -> Lille Europe (HS1 + Tunnel)
+    # Corridors transmanche
+    hs1_pts = [] # Londres -> Lille Europe (HS1 + Tunnel)
     lille_paris = rail_router.get_rail_segment(50.6389, 3.0758, 48.8809, 2.3553) # Lille Europe -> Paris Nord (LGV Nord)
     lille_bruxelles = rail_router.get_rail_segment(50.6389, 3.0758, 50.8353, 4.3358) # Lille Europe -> Bruxelles-Midi (HSL 1)
 
@@ -501,7 +501,7 @@ def build_eurostar_data():
         'stations': list(stations_map.values())
     }
 
-def {'trains': [], 'shapes_dict': {}, 'stations': []}:
+def build_european_sleeper_data():
     """Analyse le réseau European Sleeper (trains de nuit trans-européens)."""
     zf = get_european_sleeper_gtfs()
 
@@ -749,14 +749,14 @@ def build_network_data():
 
     # 2. Chargement European Sleeper
     try:
-        sleeper = {'trains': [], 'shapes_dict': {}, 'stations': []}
+        sleeper = build_european_sleeper_data()
     except Exception as e:
         print(f"⚠️ Erreur lors du chargement European Sleeper ({e})")
         sleeper = {'trains': [], 'shapes_dict': {}, 'stations': []}
 
     # 3. Fusion des trains et filtrage strict :
     # Conserver EXCLUSIVEMENT les trains en cours de circulation et ceux qui partent dans moins de 20 min (<= 1200 s)
-    all_trains = eurostar['trains']
+    all_trains = eurostar['trains'] + sleeper['trains']
     radar_trains = []
     for t in all_trains:
         if t['status'] == 'RUNNING':
