@@ -21,7 +21,6 @@ from api_models import (
     JourneyPath
 )
 from bus_tracker_service import (
-    get_cached_raw_data,
     get_networks_list,
     get_network_lines,
     get_vehicle_markers,
@@ -136,18 +135,6 @@ def get_path_alias(path_id: str):
     if not path_data:
         raise HTTPException(status_code=404, detail="Tracé non trouvé")
     return path_data
-
-# =========================================================================
-# Route de rétrocompatibilité pour le visualiseur Leaflet existant
-# =========================================================================
-
-@app.get(
-    "/api/data",
-    tags=["Legacy"],
-    summary="Flux global hérité (trains, gares, shapes) pour le frontend Leaflet existant"
-)
-def get_legacy_data():
-    return get_cached_raw_data()
 
 # =========================================================================
 # Fichiers statiques et interface web

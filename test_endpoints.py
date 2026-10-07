@@ -100,12 +100,6 @@ def test_api():
         assert r_raw.json()["id"] == first_id
         print(f"✅ Résolution rétrocompatible via ID brut '{raw_id}' OK.")
 
-    print("Testing legacy /api/data...")
-    r_leg = client.get("/api/data")
-    assert r_leg.status_code == 200
-    assert "trains" in r_leg.json()
-    print("✅ /api/data OK (rétrocompatibilité Leaflet conservée).")
-
     print("\n🎉 TOUS LES ENDPOINTS, IDENTIFIANTS ENTIERS ET FORMATS PATH.PHP SONT VALIDÉS ET CONFORMES !")
 
 if __name__ == "__main__":
