@@ -153,8 +153,8 @@ def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
                 "number": "Eurostar",
                 "girouetteNumber": None,
                 "cartridgeHref": None,
-                "color": "00D2FF",
-                "textColor": "000000",
+                "color": "116BFE",
+                "textColor": "FFFFFF",
                 "sortOrder": 1,
                 "archivedAt": None,
                 "onlineMarkerCount": euro_count,
@@ -169,7 +169,7 @@ def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
                 "number": "European Sleeper",
                 "girouetteNumber": None,
                 "cartridgeHref": None,
-                "color": "A855F7",
+                "color": "FF3602",
                 "textColor": "FFFFFF",
                 "sortOrder": 1,
                 "archivedAt": None,
@@ -206,7 +206,7 @@ def get_vehicle_markers(
             continue
 
         is_sleeper = t.get('network') == 'european_sleeper'
-        fill_color = "#A855F7" if is_sleeper else "#00D2FF"
+        fill_color = "#FF3602" if is_sleeper else "#116BFE"
         journey_netex_id = format_journey_id(t.get('id'), is_sleeper)
 
         items.append({
