@@ -174,7 +174,8 @@ def build_eurostar_data():
                 'name': r['stop_name'],
                 'lat': lat,
                 'lon': lon,
-                'platform': r.get('platform_code', '')
+                'platform': r.get('platform_code', ''),
+                'stop_code': r.get('stop_code', '')
             }
             base_id = re.sub(r'_\d+[a-zA-Z]?$', '', sid).replace('_station_area', '')
             if base_id not in stations_map:
@@ -359,6 +360,7 @@ def build_eurostar_data():
             enriched_stops.append({
                 'seq': seq,
                 'stop_id': s['stop_id'],
+                'stop_code': stop_coord.get('stop_code', ''),
                 'name': stop_display_name,
                 'lat': stop_coord['lat'],
                 'lon': stop_coord['lon'],
@@ -518,7 +520,8 @@ def build_european_sleeper_data():
                 'id': sid,
                 'name': r['stop_name'],
                 'lat': lat,
-                'lon': lon
+                'lon': lon,
+                'stop_code': r.get('stop_code', '')
             }
             stations_map[sid] = {
                 'id': f"es_{sid}",
@@ -618,6 +621,8 @@ def build_european_sleeper_data():
                 'seq': s['seq'],
                 'stop_id': s['stop_id'],
                 'name': st['name'],
+                'stop_id': st['id'],
+                'stop_code': st.get('stop_code', ''),
                 'lat': st['lat'],
                 'lon': st['lon'],
                 'sched_arr': f"{ah:02d}:{am:02d}{next_day_arr}",
