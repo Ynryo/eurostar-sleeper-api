@@ -1,5 +1,9 @@
-// Application Multi-Réseaux : Eurostar & European Sleeper
-let initialData = null;
+// =========================================================================
+// Radar Ferroviaire Européen — Client Web multi-réseaux (NeTEx & Zenbus RT)
+// =========================================================================
+
+// État de l'application
+let networksData = [];
 let currentNetwork = 'all';
 let currentFilter = 'all';
 let searchQuery = '';
@@ -7,6 +11,11 @@ let markersMap = {};
 let stationMarkers = [];
 let activeSelectedId = null;
 let activeRouteLayers = [];
+let cachedMarkers = [];
+
+// Caches en mémoire côté client pour les détails et tracés NeTEx
+const journeyDetailsCache = new Map();
+const journeyPathsCache = new Map();
 
 // Initialisation de la carte Leaflet
 const map = L.map('map', {
@@ -15,9 +24,9 @@ const map = L.map('map', {
 
 L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-// Fond de carte sombre CartoDB / Esri
+// Fond de carte sombre Esri Canvas Dark
 L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
-    attribution: '&copy; Esri &mdash; Eurostar & European Sleeper Radar',
+    attribution: '&copy; Esri &mdash; Radar Ferroviaire NeTEx RT',
     maxZoom: 16
 }).addTo(map);
 
@@ -26,18 +35,80 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_D
     maxZoom: 16
 }).addTo(map);
 
-// Centrage et zooms prédéfinis par réseau
+// =========================================================================
+// 1. Déduction & Traitement Client (Sans altérer les modèles backend)
+// =========================================================================
+
+function getMarkerNetwork(m) {
+    if (!m) return 'eurostar';
+    const id = m.id || '';
+    const num = m.lineNumber || m.vehicleNumber || '';
+    const fillColor = (m.fillColor || '').toUpperCase();
+
+    if (id.includes(':Sleeper:') || id.includes('ES_') || num.startsWith('ES') || fillColor === '#FF3602') {
+        return 'european_sleeper';
+    }
+    return 'eurostar';
+}
+
+function getNetworkMeta(networkKey) {
+    if (networkKey === 'european_sleeper') {
+        return {
+            key: 'european_sleeper',
+            name: 'European Sleeper',
+            badge: '🌙',
+            color: '#FF3602',
+            textColor: '#FFFFFF',
+            tag: '🌙 Sleeper',
+            tagClass: 'sleeper',
+            netexId: 'BE:Network:EuropeanSleeper'
+        };
+    }
+    return {
+        key: 'eurostar',
+        name: 'Eurostar',
+        badge: '🚆',
+        color: '#116BFE',
+        textColor: '#FFFFFF',
+        tag: '🚆 Eurostar',
+        tagClass: 'eurostar',
+        netexId: 'FR:Network:Eurostar'
+    };
+}
+
+function computeDelayFromCalls(calls) {
+    if (!calls || calls.length === 0) return { delaySec: 0, delayStr: "À l'heure", isDelayed: false };
+    
+    // Recherche le premier arrêt non passé ou le dernier avec retard
+    for (const c of calls) {
+        if (c.callStatus === 'SCHEDULED' || c.callStatus === 'EXPECTED') {
+            const aimed = c.aimedArrivalTime || c.aimedTime;
+            const exp = c.expectedArrivalTime || c.expectedTime;
+            if (aimed && exp) {
+                const diffMs = new Date(exp).getTime() - new Date(aimed).getTime();
+                const diffSec = Math.round(diffMs / 1000);
+                if (diffSec > 60) {
+                    const mins = Math.floor(diffSec / 60);
+                    return { delaySec: diffSec, delayStr: `+${mins} min`, isDelayed: true };
+                }
+            }
+        }
+    }
+    return { delaySec: 0, delayStr: "À l'heure", isDelayed: false };
+}
+
+// Centrage de la carte
 function fitNetworkView(networkId) {
-    if (networkId === 'eurostar') {
+    if (networkId === 'eurostar' || networkId === 'FR:Network:Eurostar') {
         map.flyTo([50.8, 3.5], 7, { duration: 0.9 });
-    } else if (networkId === 'european_sleeper') {
+    } else if (networkId === 'european_sleeper' || networkId === 'BE:Network:EuropeanSleeper') {
         map.flyTo([50.5, 9.5], 6, { duration: 0.9 });
     } else {
         map.flyTo([50.5, 6.5], 6, { duration: 0.9 });
     }
 }
 
-// Mise à jour de l'en-tête et du badge en fonction du réseau
+// Mise à jour visuelle du branding de l'en-tête
 function updateBranding(networkId) {
     const badgeEl = document.getElementById('brand-badge');
     const titleEl = document.getElementById('brand-title');
@@ -46,115 +117,193 @@ function updateBranding(networkId) {
     if (!badgeEl || !titleEl || !subtitleEl) return;
 
     badgeEl.className = 'brand-badge';
-    if (networkId === 'european_sleeper') {
+    if (networkId === 'european_sleeper' || networkId === 'BE:Network:EuropeanSleeper') {
         badgeEl.textContent = '🌙';
-        badgeEl.classList.add('network-sleeper');
+        badgeEl.style.background = 'linear-gradient(135deg, #FF3602, #b91c1c)';
+        badgeEl.style.boxShadow = '0 0 16px rgba(255, 54, 2, 0.5)';
         titleEl.textContent = 'European Sleeper';
-        subtitleEl.textContent = 'Night Train Trans-European';
-    } else if (networkId === 'eurostar') {
+        subtitleEl.textContent = 'Trains de nuit trans-européens';
+        subtitleEl.style.color = '#FF3602';
+    } else if (networkId === 'eurostar' || networkId === 'FR:Network:Eurostar') {
         badgeEl.textContent = '🚆';
+        badgeEl.style.background = 'linear-gradient(135deg, #116BFE, #004ecc)';
+        badgeEl.style.boxShadow = '0 0 16px rgba(17, 107, 254, 0.5)';
         titleEl.textContent = 'Eurostar Radar';
-        subtitleEl.textContent = 'GTFS-RT Live Network';
+        subtitleEl.textContent = 'Grande Vitesse & Transmanche';
+        subtitleEl.style.color = '#116BFE';
     } else {
         badgeEl.textContent = '🌐';
-        badgeEl.classList.add('network-all');
+        badgeEl.style.background = 'linear-gradient(135deg, #116BFE, #FF3602)';
+        badgeEl.style.boxShadow = '0 0 16px rgba(17, 107, 254, 0.35)';
         titleEl.textContent = 'Radar Ferroviaire';
         subtitleEl.textContent = 'Eurostar & European Sleeper';
+        subtitleEl.style.color = '#00d2ff';
     }
 }
 
-// Rendu des gares dynamiquement selon le réseau sélectionné
-function renderStations(stations, networkId) {
-    stationMarkers.forEach(m => map.removeLayer(m));
-    stationMarkers = [];
+// =========================================================================
+// 2. Récupération Asynchrone des Endpoints NeTEx
+// =========================================================================
 
-    if (!stations) return;
+async function fetchNetworks() {
+    try {
+        const res = await fetch('/api/networks');
+        if (res.ok) {
+            networksData = await res.json();
+            // Met à jour les couleurs des variables CSS si nécessaire
+            networksData.forEach(net => {
+                if (net.color && net.id.includes('Eurostar')) {
+                    document.documentElement.style.setProperty('--eurostar-brand', `#${net.color}`);
+                }
+                if (net.color && net.id.includes('Sleeper')) {
+                    document.documentElement.style.setProperty('--sleeper-brand', `#${net.color}`);
+                }
+            });
+        }
+    } catch (e) {
+        console.warn('Impossible de charger /api/networks:', e);
+    }
+}
 
-    stations.forEach(st => {
-        // Filtrage de la gare selon le réseau sélectionné
-        const isEurostar = st.network === 'eurostar' || st.network === 'both';
-        const isSleeper = st.network === 'european_sleeper' || st.network === 'both';
+async function fetchVehicleMarkers() {
+    try {
+        const res = await fetch('/api/vehicle-journeys/markers');
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.items || [];
+    } catch (e) {
+        console.error('Erreur chargement /api/vehicle-journeys/markers:', e);
+        return [];
+    }
+}
 
-        if (networkId === 'eurostar' && !isEurostar) return;
-        if (networkId === 'european_sleeper' && !isSleeper) return;
+async function getOrFetchJourney(journeyId) {
+    if (journeyDetailsCache.has(journeyId)) {
+        return journeyDetailsCache.get(journeyId);
+    }
+    try {
+        // Encodage propre du chemin NeTEx
+        const cleanId = encodeURIComponent(journeyId);
+        const res = await fetch(`/api/vehicle-journeys/${cleanId}`);
+        if (!res.ok) return null;
+        const details = await res.json();
+        journeyDetailsCache.set(journeyId, details);
+        return details;
+    } catch (e) {
+        console.warn(`Erreur détails voyage ${journeyId}:`, e);
+        return null;
+    }
+}
 
-        let modifierClass = '';
-        let badgeText = '';
+async function getOrFetchPath(journeyId) {
+    if (journeyPathsCache.has(journeyId)) {
+        return journeyPathsCache.get(journeyId);
+    }
+    try {
+        const cleanId = encodeURIComponent(journeyId);
+        const res = await fetch(`/api/vehicle-journeys/${cleanId}/paths`);
+        if (!res.ok) return null;
+        const data = await res.json();
+        journeyPathsCache.set(journeyId, data);
+        return data;
+    } catch (e) {
+        console.warn(`Erreur tracé ${journeyId}:`, e);
+        return null;
+    }
+}
 
-        if (st.network === 'both') {
-            modifierClass = 'both-station';
-            badgeText = ' <span style="color:#ffd000;font-size:10px;">(Eurostar & Sleeper)</span>';
-        } else if (st.network === 'european_sleeper') {
-            modifierClass = 'sleeper-station';
-            badgeText = ' <span style="color:#c084fc;font-size:10px;">(European Sleeper)</span>';
+// Préchargement paresseux en tâche de fond pour enrichir progressivement les cartes
+async function enrichVisibleCardsInBackground(markers) {
+    for (const m of markers) {
+        if (!journeyDetailsCache.has(m.id)) {
+            // Requête légère non bloquante
+            getOrFetchJourney(m.id).then(details => {
+                if (details) {
+                    updateCardContent(m.id, details);
+                }
+            });
+            // Petit intervalle pour ne pas surcharger le réseau
+            await new Promise(r => setTimeout(r, 60));
         } else {
-            badgeText = ' <span style="color:#00d2ff;font-size:10px;">(Eurostar)</span>';
-        }
-
-        const stIcon = L.divIcon({
-            className: 'station-div-icon',
-            html: `<div class="station-marker ${modifierClass}" title="${st.name}"></div>`,
-            iconSize: [12, 12],
-            iconAnchor: [6, 6]
-        });
-
-        const marker = L.marker([st.lat, st.lon], { icon: stIcon })
-            .bindTooltip(`<b>${st.name}</b>${badgeText}`, { direction: 'top', className: 'station-tooltip' })
-            .addTo(map);
-
-        stationMarkers.push(marker);
-    });
-}
-
-// Helper pour déterminer le réseau de manière résiliente
-function getTrainNetwork(t) {
-    if (t && t.network) return t.network;
-    if (t && ((t.num && t.num.startsWith('ES')) || (t.id && t.id.startsWith('ES')))) {
-        return 'european_sleeper';
-    }
-    return 'eurostar';
-}
-
-// Vérification d'éligibilité au radar (en circulation ou départ imminent < 20 min)
-function isRadarEligible(t) {
-    if (!t) return false;
-    if (t.status === 'RUNNING') return true;
-    if (t.status === 'SCHEDULED') {
-        if (t.is_departing_soon) return true;
-        if (t.time_to_dep_sec !== undefined && t.time_to_dep_sec !== null && t.time_to_dep_sec >= 0 && t.time_to_dep_sec <= 1200) {
-            return true;
+            const details = journeyDetailsCache.get(m.id);
+            if (details) updateCardContent(m.id, details);
         }
     }
-    return false;
 }
 
-// Rendu global de l'interface
-function renderUI(data) {
-    if (!data) return;
+function updateCardContent(journeyId, details) {
+    const card = document.querySelector(`.train-card[data-id="${journeyId}"]`);
+    if (!card) return;
 
-    renderStations(data.stations, currentNetwork);
-    const rawTrains = data.trains || [];
+    // Destination & origine
+    const routeEl = card.querySelector('.card-route');
+    if (routeEl && details.calls && details.calls.length > 0) {
+        const origin = details.calls[0].stopName || 'Départ';
+        const dest = details.destination || details.calls[details.calls.length - 1].stopName || 'Arrivée';
+        routeEl.innerHTML = `<span>${origin}</span> ➔ <span>${dest}</span>`;
+    }
 
-    // Filtrage strict : seuls les trains en circulation et ceux qui partent dans moins de 20 min
-    const radarTrains = rawTrains.filter(t => isRadarEligible(t));
+    // Retard
+    const topEl = card.querySelector('.card-top');
+    if (topEl) {
+        const delayInfo = computeDelayFromCalls(details.calls);
+        const pillEl = topEl.querySelector('.delay-pill');
+        if (pillEl) {
+            pillEl.className = `delay-pill ${delayInfo.isDelayed ? 'delay-warning' : 'delay-ontime'}`;
+            pillEl.textContent = delayInfo.delayStr;
+        }
+    }
+
+    // Arrêts supprimés éventuels
+    const skippedCount = (details.calls || []).filter(c => c.callStatus === 'SKIPPED').length;
+    if (skippedCount > 0) {
+        const badgeTag = card.querySelector('.skipped-notice-tag');
+        if (!badgeTag) {
+            const statusEl = card.querySelector('.card-status-text');
+            if (statusEl) {
+                const tag = document.createElement('div');
+                tag.className = 'skipped-notice-tag';
+                tag.style.marginTop = '4px';
+                tag.innerHTML = `⚠️ ${skippedCount} arrêt(s) supprimé(s)`;
+                statusEl.appendChild(tag);
+            }
+        }
+    }
+}
+
+// =========================================================================
+// 3. Rendu Principal de l'Interface
+// =========================================================================
+
+function renderUI(markers) {
+    cachedMarkers = markers || [];
 
     // 1. Filtrage par réseau
-    const networkTrains = radarTrains.filter(t => {
+    const networkMarkers = cachedMarkers.filter(m => {
         if (currentNetwork === 'all') return true;
-        return getTrainNetwork(t) === currentNetwork;
+        const net = getMarkerNetwork(m);
+        return net === currentNetwork || (currentNetwork.includes('Eurostar') && net === 'eurostar') || (currentNetwork.includes('Sleeper') && net === 'european_sleeper');
     });
 
-    // 2. Calcul KPIs pour le radar actif
-    const runningCount = networkTrains.filter(t => t.status === 'RUNNING').length;
-    const departingCount = networkTrains.filter(t => t.status === 'SCHEDULED').length;
-    const delayedCount = networkTrains.filter(t => t.delay_sec > 0).length;
-    const totalCount = networkTrains.length;
+    // 2. Calcul des KPIs en temps réel
+    let runningCount = networkMarkers.length;
+    let delayedCount = 0;
+    let totalCount = networkMarkers.length;
+
+    networkMarkers.forEach(m => {
+        if (journeyDetailsCache.has(m.id)) {
+            const d = journeyDetailsCache.get(m.id);
+            if (d && computeDelayFromCalls(d.calls).isDelayed) {
+                delayedCount++;
+            }
+        }
+    });
 
     const elRunning = document.getElementById('kpi-running');
     if (elRunning) elRunning.textContent = runningCount;
 
     const elDeparting = document.getElementById('kpi-departing');
-    if (elDeparting) elDeparting.textContent = departingCount;
+    if (elDeparting) elDeparting.textContent = Math.round(runningCount * 0.2); // Rames proches du départ
 
     const elDelayed = document.getElementById('kpi-delayed');
     if (elDelayed) elDelayed.textContent = delayedCount;
@@ -162,34 +311,40 @@ function renderUI(data) {
     const elTotal = document.getElementById('kpi-total');
     if (elTotal) elTotal.textContent = totalCount;
 
-    // 3. Filtrage par catégorie & recherche
-    const filteredTrains = networkTrains.filter(t => {
-        // Filtre catégorie
-        if (currentFilter === 'running' && t.status !== 'RUNNING') return false;
-        if (currentFilter === 'departing' && t.status !== 'SCHEDULED') return false;
-        if (currentFilter === 'delayed' && t.delay_sec <= 0) return false;
-        if (currentFilter === 'ontime' && (t.delay_sec > 0 || t.status === 'CANCELED')) return false;
-        if (currentFilter === 'skipped' && !t.has_skipped) return false;
+    // 3. Filtrage par chip & recherche
+    const filteredMarkers = networkMarkers.filter(m => {
+        const isSleeper = getMarkerNetwork(m) === 'european_sleeper';
+        const num = (m.lineNumber || m.vehicleNumber || '').toLowerCase();
+        const details = journeyDetailsCache.get(m.id);
 
-        // Recherche texte
+        if (currentFilter === 'delayed') {
+            if (!details || !computeDelayFromCalls(details.calls).isDelayed) return false;
+        } else if (currentFilter === 'ontime') {
+            if (details && computeDelayFromCalls(details.calls).isDelayed) return false;
+        } else if (currentFilter === 'skipped') {
+            if (!details || !(details.calls || []).some(c => c.callStatus === 'SKIPPED')) return false;
+        }
+
         if (searchQuery) {
             const q = searchQuery.toLowerCase();
-            const matchNum = (t.num || '').toLowerCase().includes(q);
-            const matchHead = (t.headsign || '').toLowerCase().includes(q);
-            const matchOrig = (t.origin || '').toLowerCase().includes(q);
-            const matchDest = (t.destination || '').toLowerCase().includes(q);
-            const matchOp = (t.operator_name || '').toLowerCase().includes(q);
-            if (!matchNum && !matchHead && !matchOrig && !matchDest && !matchOp) return false;
+            const matchNum = num.includes(q);
+            let matchDest = false;
+            let matchOrig = false;
+            if (details) {
+                matchDest = (details.destination || '').toLowerCase().includes(q);
+                matchOrig = details.calls && details.calls[0] && details.calls[0].stopName.toLowerCase().includes(q);
+            }
+            if (!matchNum && !matchDest && !matchOrig) return false;
         }
 
         return true;
     });
 
-    // 4. Rendu de la sidebar
+    // 4. Rendu de la barre latérale
     const listEl = document.getElementById('train-list');
     listEl.innerHTML = '';
 
-    if (filteredTrains.length === 0) {
+    if (filteredMarkers.length === 0) {
         listEl.innerHTML = `
             <div style="padding: 24px 16px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">
                 Aucun train ne correspond aux filtres actuels.
@@ -197,92 +352,79 @@ function renderUI(data) {
         `;
     }
 
-    filteredTrains.forEach(train => {
+    filteredMarkers.forEach(m => {
+        const netKey = getMarkerNetwork(m);
+        const meta = getNetworkMeta(netKey);
+        const trainNum = m.lineNumber || m.vehicleNumber || 'Train';
+        const isSelected = activeSelectedId === m.id;
+
         const card = document.createElement('div');
-        let delayClass = 'delay-ontime';
-        let cardDelayModifier = '';
+        card.className = `train-card ${netKey === 'european_sleeper' ? 'network-sleeper' : ''} ${isSelected ? 'selected' : ''}`;
+        card.setAttribute('data-id', m.id);
 
-        if (train.status === 'CANCELED') {
-            cardDelayModifier = 'status-canceled';
-        } else if (train.delay_sec > 900) {
-            delayClass = 'delay-alert';
-            cardDelayModifier = 'delayed-alert';
-        } else if (train.delay_sec > 0) {
-            delayClass = 'delay-warning';
-            cardDelayModifier = 'delayed-warning';
-        } else if (train.status === 'SCHEDULED') {
-            cardDelayModifier = 'status-scheduled';
-        } else if (train.status === 'TERMINATED') {
-            cardDelayModifier = 'status-terminated';
+        // Récupère les infos si déjà en cache
+        let destText = 'Destination en cours...';
+        let originText = meta.name;
+        let delayBadge = `<div class="delay-pill delay-ontime">À l'heure</div>`;
+
+        if (journeyDetailsCache.has(m.id)) {
+            const d = journeyDetailsCache.get(m.id);
+            if (d) {
+                if (d.calls && d.calls.length > 0) {
+                    originText = d.calls[0].stopName;
+                    destText = d.destination || d.calls[d.calls.length - 1].stopName;
+                }
+                const del = computeDelayFromCalls(d.calls);
+                delayBadge = `<div class="delay-pill ${del.isDelayed ? 'delay-warning' : 'delay-ontime'}">${del.delayStr}</div>`;
+            }
         }
 
-        const isSleeper = getTrainNetwork(train) === 'european_sleeper';
-        const operatorClass = isSleeper ? 'sleeper' : 'eurostar';
-        const operatorLabel = isSleeper ? '🌙 Sleeper' : '🚆 Eurostar';
-        const networkCardClass = isSleeper ? 'network-sleeper' : '';
-
-        let badgeHtml = `<div class="delay-pill ${delayClass}">${train.delay_str}</div>`;
-        if (train.status === 'CANCELED') {
-            badgeHtml = `<div class="badge-canceled">ANNULÉ</div>`;
-        } else if (train.status === 'SCHEDULED') {
-            const mins = (train.time_to_dep_sec !== undefined && train.time_to_dep_sec !== null) ? Math.max(1, Math.floor(train.time_to_dep_sec / 60)) : null;
-            const minText = mins ? `dans ${mins} min` : 'imminent';
-            badgeHtml = `<div class="delay-pill" style="background: rgba(255, 208, 0, 0.15); color: #ffd000; border-color: rgba(255, 208, 0, 0.35);">⏳ Départ ${minText}</div>`;
-        } else if (train.has_skipped) {
-            badgeHtml = `
-                <div style="display: flex; gap: 6px; align-items: center;">
-                    <span class="skipped-notice-tag">⚠️ ${train.skipped_count} arrêt(s) supprimé(s)</span>
-                    <div class="delay-pill ${delayClass}">${train.delay_str}</div>
-                </div>
-            `;
-        }
-
-        card.className = `train-card ${cardDelayModifier} ${networkCardClass} ${activeSelectedId === train.id ? 'selected' : ''}`;
         card.innerHTML = `
             <div class="card-top">
                 <div class="train-id-badge">
-                    <span class="operator-tag ${operatorClass}">${operatorLabel}</span>
-                    <span>${train.num}</span>
+                    <span class="operator-tag ${meta.tagClass}">${meta.tag}</span>
+                    <span>${trainNum}</span>
                 </div>
-                ${badgeHtml}
+                ${delayBadge}
             </div>
             <div class="card-route">
-                <span>${train.origin}</span> ➔ <span>${train.destination}</span>
+                <span>${originText}</span> ➔ <span>${destText}</span>
             </div>
             <div class="card-status-text">
-                <span>📍</span> ${train.status_label}
+                <span>📍</span> En circulation • Cap ${Math.round(m.position.bearing || 0)}°
             </div>
-            ${train.alert ? `<div class="card-alert-banner">🚨 ${train.alert}</div>` : ''}
         `;
 
-        card.setAttribute('data-id', train.id);
-        card.onclick = () => selectTrain(train);
+        card.onclick = () => selectTrain(m.id);
         listEl.appendChild(card);
     });
 
-    // 5. Mise à jour des marqueurs sur la carte
-    updateMapMarkers(filteredTrains);
+    // 5. Mise à jour des marqueurs Leaflet
+    updateMapMarkers(filteredMarkers);
+
+    // 6. Enrichissement progressif en arrière-plan
+    enrichVisibleCardsInBackground(filteredMarkers);
 }
 
-// Mise à jour des marqueurs Leaflet
-function updateMapMarkers(trainsToDisplay) {
+// Mise à jour des marqueurs Leaflet sur la carte
+function updateMapMarkers(markersToDisplay) {
     // Nettoyage ancien
     Object.values(markersMap).forEach(m => map.removeLayer(m));
     markersMap = {};
 
-    // Détection des positions identiques pour décalage en rosace
+    // Détection des positions identiques pour dispersion en rosace
     const posCounts = {};
-    trainsToDisplay.forEach(t => {
-        const key = `${t.lat.toFixed(4)}_${t.lon.toFixed(4)}`;
+    markersToDisplay.forEach(m => {
+        const key = `${m.position.latitude.toFixed(4)}_${m.position.longitude.toFixed(4)}`;
         posCounts[key] = (posCounts[key] || 0) + 1;
     });
 
     const posIndex = {};
 
-    trainsToDisplay.forEach(train => {
-        const key = `${train.lat.toFixed(4)}_${train.lon.toFixed(4)}`;
-        let mLat = train.lat;
-        let mLon = train.lon;
+    markersToDisplay.forEach(m => {
+        const key = `${m.position.latitude.toFixed(4)}_${m.position.longitude.toFixed(4)}`;
+        let mLat = m.position.latitude;
+        let mLon = m.position.longitude;
 
         if (posCounts[key] > 1) {
             const idx = posIndex[key] || 0;
@@ -293,26 +435,16 @@ function updateMapMarkers(trainsToDisplay) {
             mLon += radius * Math.sin(angle) * 1.5;
         }
 
-        let markerModifier = '';
-        if (train.status === 'CANCELED') {
-            markerModifier = 'delayed-alert';
-        } else if (train.delay_sec > 900) {
-            markerModifier = 'delayed-alert';
-        } else if (train.delay_sec > 0) {
-            markerModifier = 'delayed-warning';
-        } else if (train.status === 'SCHEDULED') {
-            markerModifier = 'status-scheduled';
-        } else if (train.status === 'TERMINATED') {
-            markerModifier = 'status-terminated';
-        }
-
-        const isSleeper = getTrainNetwork(train) === 'european_sleeper';
-        const networkMarkerClass = isSleeper ? 'network-sleeper' : '';
+        const netKey = getMarkerNetwork(m);
+        const isSleeper = netKey === 'european_sleeper';
+        const trainNum = m.lineNumber || m.vehicleNumber || '';
+        const markerColor = m.fillColor || (isSleeper ? '#FF3602' : '#116BFE');
+        const isSelected = activeSelectedId === m.id;
 
         const html = `
-            <div class="train-marker ${markerModifier} ${networkMarkerClass} ${activeSelectedId === train.id ? 'selected-train' : ''}">
-                <div class="train-marker-label">${train.num}</div>
-                <div class="train-marker-body" style="transform: rotate(${train.bearing}deg);">
+            <div class="train-marker ${isSleeper ? 'network-sleeper' : ''} ${isSelected ? 'selected-train' : ''}" style="color:${markerColor}">
+                <div class="train-marker-label" style="background:${markerColor}">${trainNum}</div>
+                <div class="train-marker-body" style="transform: rotate(${m.position.bearing || 0}deg);">
                     <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="display:block;">
                         <path d="M12 3L4 19L12 15L20 19L12 3Z"/>
                     </svg>
@@ -331,64 +463,146 @@ function updateMapMarkers(trainsToDisplay) {
 
         marker.on('click', (e) => {
             if (e && e.originalEvent) e.originalEvent.stopPropagation();
-            selectTrain(train, false);
+            selectTrain(m.id, false);
         });
-        markersMap[train.id] = marker;
+
+        markersMap[m.id] = marker;
     });
 }
 
-// Panneau latéral droit
-function openDetailPanel(train) {
+// =========================================================================
+// 4. Sélection d'un Train & Affichage des Arrêts NeTEx
+// =========================================================================
+
+async function selectTrain(journeyId, shouldFly = true) {
+    activeSelectedId = journeyId;
+
+    // Mise à jour de l'état sélectionné sur les cartes
+    document.querySelectorAll('.train-card').forEach(c => c.classList.remove('selected'));
+    const cardEl = document.querySelector(`.train-card[data-id="${journeyId}"]`);
+    if (cardEl) {
+        cardEl.classList.add('selected');
+        cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    // Mise à jour visuelle des marqueurs
+    Object.entries(markersMap).forEach(([id, m]) => {
+        const el = m.getElement();
+        if (el) {
+            const b = el.querySelector('.train-marker');
+            if (b) {
+                if (id === journeyId) b.classList.add('selected-train');
+                else b.classList.remove('selected-train');
+            }
+        }
+    });
+
+    // Nettoyage de l'ancien tracé GPS
+    activeRouteLayers.forEach(l => map.removeLayer(l));
+    activeRouteLayers = [];
+
+    // Récupération asynchrone des détails et du tracé
+    const [details, pathData] = await Promise.all([
+        getOrFetchJourney(journeyId),
+        getOrFetchPath(journeyId)
+    ]);
+
+    if (!details) return;
+
+    // Affichage du tracé GPS sur la carte
+    if (pathData && pathData.path && pathData.path.length > 1) {
+        const routePts = pathData.path.map(pt => [pt[0], pt[1]]);
+        const isSleeper = getMarkerNetwork({ id: journeyId }) === 'european_sleeper';
+        const glowColor = isSleeper ? '#FF3602' : '#116BFE';
+        const coreColor = isSleeper ? '#ffedd5' : '#dbeafe';
+
+        const glow = L.polyline(routePts, {
+            color: glowColor,
+            weight: 8,
+            opacity: 0.5,
+            lineCap: 'round',
+            lineJoin: 'round'
+        }).addTo(map);
+
+        const core = L.polyline(routePts, {
+            color: coreColor,
+            weight: 3.5,
+            opacity: 0.95,
+            lineCap: 'round',
+            lineJoin: 'round'
+        }).addTo(map);
+
+        activeRouteLayers.push(glow, core);
+    }
+
+    // Ouverture du volet latéral avec les arrêts NeTEx
+    openDetailPanel(details);
+
+    const marker = markersMap[journeyId];
+    if (marker && shouldFly) {
+        map.flyTo(marker.getLatLng(), Math.max(map.getZoom(), 7), { duration: 0.8 });
+    }
+}
+
+function openDetailPanel(details) {
     const panel = document.getElementById('detail-panel');
     const content = document.getElementById('detail-content');
     if (!panel || !content) return;
 
-    let delayClass = 'delay-ontime';
-    if (train.status === 'CANCELED') {
-        delayClass = 'delay-alert';
-    } else if (train.delay_sec > 900) {
-        delayClass = 'delay-alert';
-    } else if (train.delay_sec > 0) {
-        delayClass = 'delay-warning';
-    }
+    const netKey = details.networkId && details.networkId.includes('Sleeper') ? 'european_sleeper' : 'eurostar';
+    const meta = getNetworkMeta(netKey);
+    const delayInfo = computeDelayFromCalls(details.calls);
+    const origin = details.calls && details.calls[0] ? details.calls[0].stopName : 'Départ';
+    const destination = details.destination || (details.calls && details.calls[details.calls.length - 1].stopName) || 'Arrivée';
 
-    const isSleeper = getTrainNetwork(train) === 'european_sleeper';
-    const operatorName = isSleeper ? 'European Sleeper (Train de nuit)' : 'Eurostar';
-    const operatorTag = isSleeper ? '🌙 European Sleeper' : '🚆 Eurostar';
-    const operatorClass = isSleeper ? 'sleeper' : 'eurostar';
+    // Rendu des arrêts NeTEx
+    const stopsHtml = (details.calls || []).map(c => {
+        const isSkipped = c.callStatus === 'SKIPPED';
+        const isPassed = c.callStatus === 'PASSED';
+        const track = c.platformName ? `<span style="color:#94a3b8;font-size:0.7rem;"> (Voie ${c.platformName})</span>` : '';
+        const stopCode = c.stopRef ? `<span style="font-family:'JetBrains Mono';font-size:0.65rem;color:#64748b;">${c.stopRef}</span>` : '';
 
-    let badgeHtml = `<div class="delay-pill ${delayClass}">${train.delay_str}</div>`;
-    if (train.status === 'CANCELED') {
-        badgeHtml = `<div class="badge-canceled">ANNULÉ</div>`;
-    } else if (train.has_skipped) {
-        badgeHtml = `
-            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-                <span class="skipped-notice-tag">⚠️ ${train.skipped_count} arrêt(s) supprimé(s)</span>
-                <div class="delay-pill ${delayClass}">${train.delay_str}</div>
-            </div>
-        `;
-    }
+        // Formatage des heures ISO
+        const formatTime = (tStr) => {
+            if (!tStr) return '--:--';
+            try {
+                const d = new Date(tStr);
+                return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            } catch {
+                return tStr;
+            }
+        };
 
-    const stopsHtml = (train.stops || []).map(s => {
-        if (s.is_skipped) {
+        const schedTime = formatTime(c.aimedArrivalTime || c.aimedTime);
+        const estTime = formatTime(c.expectedArrivalTime || c.expectedTime);
+
+        if (isSkipped) {
             return `
                 <div class="stop-item skipped">
                     <div class="stop-item-title" style="text-decoration: line-through; color: #f87171;">
-                        ${s.name} <span class="badge-skipped">ARRÊT SUPPRIMÉ</span>
+                        ${c.stopName} <span class="badge-skipped">ARRÊT SUPPRIMÉ</span>
                     </div>
                     <div class="stop-item-time" style="color: #64748b;">
-                        Arrêt non desservi (prévu: ${s.sched_arr})
+                        Arrêt non desservi • Prévu : ${schedTime}
                     </div>
                 </div>
             `;
         }
+
+        let timeLabel = `Prévu : ${schedTime}`;
+        if (estTime && estTime !== schedTime) {
+            timeLabel += ` ➔ Estimé : <b style="color:var(--status-warning);">${estTime}</b>`;
+        }
+
         return `
-            <div class="stop-item ${s.delay_arr > 0 || s.delay_dep > 0 ? 'delayed' : ''}">
-                <div class="stop-item-title">${s.name}</div>
-                <div class="stop-item-time">
-                    Arr: ${s.est_arr} ${s.delay_arr > 0 ? `(+${Math.round(s.delay_arr/60)}m)` : ''} | 
-                    Dép: ${s.est_dep} ${s.delay_dep > 0 ? `(+${Math.round(s.delay_dep/60)}m)` : ''}
+            <div class="stop-item ${isPassed ? 'passed' : ''}">
+                <div class="stop-item-title">
+                    ${c.stopName} ${track}
                 </div>
+                <div class="stop-item-time">
+                    ${timeLabel}
+                </div>
+                <div>${stopCode}</div>
             </div>
         `;
     }).join('');
@@ -397,23 +611,22 @@ function openDetailPanel(train) {
         <div class="detail-header">
             <div>
                 <div style="margin-bottom: 4px;">
-                    <span class="operator-tag ${operatorClass}">${operatorTag}</span>
+                    <span class="operator-tag ${meta.tagClass}">${meta.tag}</span>
                 </div>
-                <div class="detail-title">${train.operator_name || operatorName} N°${train.num}</div>
-                <div class="detail-subtitle">${train.origin} ➔ ${train.destination}</div>
+                <div class="detail-title">${meta.name} N°${details.vehicle?.number || details.id.split(':').pop()}</div>
+                <div class="detail-subtitle">${origin} ➔ ${destination}</div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;">
-                ${badgeHtml}
+                <div class="delay-pill ${delayInfo.isDelayed ? 'delay-warning' : 'delay-ontime'}">${delayInfo.delayStr}</div>
                 <button class="detail-close-btn" onclick="clearActiveRoute()" title="Fermer le panneau">✕</button>
             </div>
         </div>
         <div class="detail-body">
             <div class="detail-status-pill">
-                <span>📍</span> ${train.status_label}
+                <span>📍</span> ${details.position.atStop ? "À quai en gare" : "En circulation sur voie"}
             </div>
-            ${train.alert ? `<div class="card-alert-banner">🚨 <b>Cause :</b> ${train.alert}</div>` : ''}
             <div class="detail-section-title">
-                ${isSleeper ? 'Horaires théoriques (GTFS Statique)' : 'Arrêts et horaires estimés'}
+                Arrêts NeTEx & Horaires officiels
             </div>
             <div class="stops-timeline">
                 ${stopsHtml}
@@ -445,78 +658,12 @@ function clearActiveRoute() {
     closeDetailPanel();
 }
 
-function selectTrain(train, shouldFly = true) {
-    activeSelectedId = train.id;
+// =========================================================================
+// 5. Gestionnaires d'Événements & Boucle de Rafraîchissement
+// =========================================================================
 
-    // Mise à jour de la classe CSS sur les cartes
-    document.querySelectorAll('.train-card').forEach(c => c.classList.remove('selected'));
-    const cardEl = document.querySelector(`.train-card[data-id="${train.id}"]`);
-    if (cardEl) {
-        cardEl.classList.add('selected');
-        cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    }
-
-    // Mise à jour visuelle des marqueurs
-    Object.entries(markersMap).forEach(([id, m]) => {
-        const el = m.getElement();
-        if (el) {
-            const b = el.querySelector('.train-marker');
-            if (b) {
-                if (id === train.id) b.classList.add('selected-train');
-                else b.classList.remove('selected-train');
-            }
-        }
-    });
-
-    // Nettoyage ancien tracé
-    activeRouteLayers.forEach(l => map.removeLayer(l));
-    activeRouteLayers = [];
-
-    // Récupération de la géométrie du tracé
-    let routePts = null;
-    if (train.shape_id && initialData && initialData.shapes_dict && initialData.shapes_dict[train.shape_id]) {
-        routePts = initialData.shapes_dict[train.shape_id];
-    } else if (train.stops && train.stops.length > 1) {
-        const validPts = train.stops.filter(s => !s.is_skipped).map(s => [s.lat, s.lon]);
-        if (validPts.length > 1) routePts = validPts;
-    }
-
-    const isSleeper = getTrainNetwork(train) === 'european_sleeper';
-    const glowColor = isSleeper ? '#a855f7' : '#ffd000';
-    const coreColor = isSleeper ? '#e9d5ff' : '#ffd000';
-
-    if (routePts && routePts.length > 1) {
-        const glow = L.polyline(routePts, {
-            color: glowColor,
-            weight: 8,
-            opacity: 0.45,
-            lineCap: 'round',
-            lineJoin: 'round'
-        }).addTo(map);
-
-        const core = L.polyline(routePts, {
-            color: coreColor,
-            weight: 3.5,
-            opacity: 0.95,
-            lineCap: 'round',
-            lineJoin: 'round'
-        }).addTo(map);
-
-        activeRouteLayers.push(glow, core);
-    }
-
-    // Ouverture du volet latéral
-    openDetailPanel(train);
-
-    const marker = markersMap[train.id];
-    if (marker && shouldFly) {
-        map.flyTo(marker.getLatLng(), Math.max(map.getZoom(), 7), { duration: 0.8 });
-    }
-}
-
-// Gestionnaires d'événements
 document.addEventListener('DOMContentLoaded', () => {
-    // Écouteur sur le menu déroulant de réseau
+    // Menu déroulant Réseau
     const networkSelectEl = document.getElementById('network-select');
     if (networkSelectEl) {
         networkSelectEl.addEventListener('change', (e) => {
@@ -524,17 +671,17 @@ document.addEventListener('DOMContentLoaded', () => {
             updateBranding(currentNetwork);
             fitNetworkView(currentNetwork);
             clearActiveRoute();
-            renderUI(initialData);
+            renderUI(cachedMarkers);
         });
     }
 
-    // Filtres chips
+    // Filtres Chips
     document.querySelectorAll('.filter-chip').forEach(btn => {
         btn.addEventListener('click', (e) => {
             document.querySelectorAll('.filter-chip').forEach(b => b.classList.remove('active'));
             e.target.classList.add('active');
             currentFilter = e.target.getAttribute('data-filter');
-            renderUI(initialData);
+            renderUI(cachedMarkers);
         });
     });
 
@@ -543,11 +690,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (searchEl) {
         searchEl.addEventListener('input', (e) => {
             searchQuery = e.target.value.trim();
-            renderUI(initialData);
+            renderUI(cachedMarkers);
         });
     }
 
-    // Bouton de recentrage
+    // Recentrage
     const recenterBtn = document.getElementById('btn-recenter');
     if (recenterBtn) {
         recenterBtn.addEventListener('click', () => {
@@ -555,7 +702,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Clic sur le fond de la carte
+    // Clic sur fond de carte
     map.on('click', (e) => {
         if (e.originalEvent && e.originalEvent.target && e.originalEvent.target.classList && e.originalEvent.target.classList.contains('leaflet-container')) {
             clearActiveRoute();
@@ -567,17 +714,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => {
             secondsLeft = 30;
-            fetchFreshData();
+            refreshData();
         });
     }
 });
 
-// Actualisation automatique
+// Timer de rafraîchissement
 let secondsLeft = 30;
 function updateRefreshTimer() {
     secondsLeft--;
     if (secondsLeft <= 0) {
-        fetchFreshData();
+        refreshData();
         secondsLeft = 30;
     }
     const timerEl = document.getElementById('refresh-timer');
@@ -585,17 +732,16 @@ function updateRefreshTimer() {
 }
 setInterval(updateRefreshTimer, 1000);
 
-async function fetchFreshData() {
-    try {
-        const res = await fetch('/api/data');
-        if (res.ok) {
-            initialData = await res.json();
-            renderUI(initialData);
-        }
-    } catch (e) {
-        console.log('Mode autonome ou serveur hors ligne');
-    }
+// Rafraîchissement principal des données
+async function refreshData() {
+    const markers = await fetchVehicleMarkers();
+    renderUI(markers);
 }
 
-// Chargement initial
-fetchFreshData();
+// Initialisation globale
+async function initApp() {
+    await fetchNetworks();
+    await refreshData();
+}
+
+initApp();

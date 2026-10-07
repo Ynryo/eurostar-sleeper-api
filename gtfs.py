@@ -64,12 +64,12 @@ def get_networks():
     return get_networks_list()
 
 @app.get(
-    "/api/networks/{network_id}/lines",
+    "/api/networks/{network_id:path}/lines",
     response_model=List[NetworkLineItem],
     tags=["Networks"],
     summary="Liste des lignes d'un réseau de transport"
 )
-def get_lines(network_id: int):
+def get_lines(network_id: str):
     lines = get_network_lines(network_id)
     if lines is None:
         raise HTTPException(status_code=404, detail="Réseau non trouvé")

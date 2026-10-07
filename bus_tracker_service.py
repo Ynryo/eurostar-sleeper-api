@@ -47,32 +47,76 @@ def format_iso_time(time_str: Optional[str], tz_offset_hours: int = 2) -> Option
     except Exception:
         return None
 
+def get_netex_stop_ref(stop: Dict[str, Any], is_sleeper: bool) -> str:
+    """Génère un identifiant d'arrêt normalisé NeTEx (Code pays UIC + matricule)."""
+    stop_uic = str(stop.get('stop_code') or stop.get('stop_id') or '')
+    
+    # Détection du code pays UIC selon la fiche UIC 920-14
+    if stop_uic.startswith("87"):
+        country = "FR"
+    elif stop_uic.startswith("70"):
+        country = "GB"
+    elif stop_uic.startswith("88"):
+        country = "BE"
+    elif stop_uic.startswith("84"):
+        country = "NL"
+    elif stop_uic.startswith("80"):
+        country = "DE"
+    elif stop_uic.startswith("54"):
+        country = "CZ"
+    elif stop_uic.startswith("85"):
+        country = "CH"
+    elif stop_uic.startswith("81"):
+        country = "AT"
+    else:
+        country = "BE" if is_sleeper else "FR"
+        
+    return f"{country}:StopPoint:{stop_uic}"
+
+def format_journey_id(raw_id: Any, is_sleeper: bool) -> str:
+    """Convertit un identifiant de course brut en identifiant NeTEx ServiceJourney."""
+    str_id = str(raw_id)
+    if str_id.startswith("FR:Eurostar:VehicleJourney:") or str_id.startswith("BE:Sleeper:VehicleJourney:"):
+        return str_id
+    if is_sleeper:
+        return f"BE:Sleeper:VehicleJourney:{str_id}"
+    else:
+        return f"FR:Eurostar:VehicleJourney:{str_id}"
+
+def extract_raw_journey_id(journey_id: str) -> str:
+    """Extrait l'identifiant brut pour recherche interne si un ID NeTEx est fourni."""
+    if ":VehicleJourney:" in journey_id:
+        return journey_id.split(":VehicleJourney:")[-1]
+    return journey_id
+
 NETWORKS_METADATA = [
     {
-        "id": 1,
-        "ref": "EUROSTAR",
+        "id": "FR:Network:Eurostar",
+        "numeric_id": 1,
+        "ref": "FR:Network:Eurostar",
         "name": "Eurostar",
         "authority": "Eurostar Group",
         "countryCode": "FR",
         "timezone": "Europe/Paris",
         "logoHref": "https://upload.wikimedia.org/wikipedia/commons/3/33/Eurostar_logo_%282023%29.svg",
         "darkModeLogoHref": "https://upload.wikimedia.org/wikipedia/commons/3/33/Eurostar_logo_%282023%29.svg",
-        "color": "00D2FF",
+        "color": "116BFE",
         "textColor": "000000",
         "hasVehiclesFeature": True,
         "regionId": 13,
         "embedMapCenter": [2.355, 48.88, 7]
     },
     {
-        "id": 2,
-        "ref": "EUROPEAN_SLEEPER",
+        "id": "BE:Network:EuropeanSleeper",
+        "numeric_id": 2,
+        "ref": "BE:Network:EuropeanSleeper",
         "name": "European Sleeper",
         "authority": "European Sleeper BV",
         "countryCode": "BE",
         "timezone": "Europe/Brussels",
         "logoHref": "https://upload.wikimedia.org/wikipedia/commons/3/3d/European_Sleeper_Logo.svg",
         "darkModeLogoHref": "https://upload.wikimedia.org/wikipedia/commons/3/3d/European_Sleeper_Logo.svg",
-        "color": "A855F7",
+        "color": "FF3602",
         "textColor": "FFFFFF",
         "hasVehiclesFeature": True,
         "regionId": 13,
@@ -83,39 +127,49 @@ NETWORKS_METADATA = [
 def get_networks_list() -> List[Dict[str, Any]]:
     return NETWORKS_METADATA
 
-def get_network_lines(network_id: int) -> Optional[List[Dict[str, Any]]]:
-    net = next((n for n in NETWORKS_METADATA if n["id"] == network_id), None)
+def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
+    s_id = str(network_id).strip()
+    net = next((
+        n for n in NETWORKS_METADATA 
+        if str(n["id"]) == s_id 
+        or str(n.get("numeric_id")) == s_id 
+        or n["ref"] == s_id 
+        or (s_id == "1" and "Eurostar" in n["name"]) 
+        or (s_id == "2" and "Sleeper" in n["name"])
+    ), None)
+
     if not net:
         return None
+
     data = get_cached_raw_data()
     euro_count = len([t for t in data['trains'] if t.get('network') == 'eurostar'])
     sleeper_count = len([t for t in data['trains'] if t.get('network') == 'european_sleeper'])
 
-    if network_id == 1:
+    if "Eurostar" in net["name"]:
         return [
             {
-                "id": 1,
-                "references": ["EUROSTAR:Line:1"],
+                "id": "FR:Line:Eurostar",
+                "references": ["FR:Line:Eurostar", "EUROSTAR:Line:1"],
                 "number": "Eurostar",
                 "girouetteNumber": None,
                 "cartridgeHref": None,
-                "color": "00D2FF",
-                "textColor": "000000",
+                "color": "116BFE",
+                "textColor": "FFFFFF",
                 "sortOrder": 1,
                 "archivedAt": None,
                 "onlineMarkerCount": euro_count,
                 "onlineVehicleCount": euro_count
             }
         ]
-    elif network_id == 2:
+    elif "Sleeper" in net["name"]:
         return [
             {
-                "id": 2,
-                "references": ["EUROPEAN_SLEEPER:Line:1"],
+                "id": "BE:Line:EuropeanSleeper",
+                "references": ["BE:Line:EuropeanSleeper", "EUROPEAN_SLEEPER:Line:1"],
                 "number": "European Sleeper",
                 "girouetteNumber": None,
                 "cartridgeHref": None,
-                "color": "A855F7",
+                "color": "FF3602",
                 "textColor": "FFFFFF",
                 "sortOrder": 1,
                 "archivedAt": None,
@@ -152,10 +206,11 @@ def get_vehicle_markers(
             continue
 
         is_sleeper = t.get('network') == 'european_sleeper'
-        fill_color = "#A855F7" if is_sleeper else "#00D2FF"
+        fill_color = "#FF3602" if is_sleeper else "#116BFE"
+        journey_netex_id = format_journey_id(t.get('id'), is_sleeper)
 
         items.append({
-            "id": str(t.get('id')),
+            "id": journey_netex_id,
             "lineNumber": str(t.get('num', '')),
             "vehicleNumber": str(t.get('num', '')),
             "color": "#FFFFFF",
@@ -175,12 +230,15 @@ def get_vehicle_markers(
 
 def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
     data = get_cached_raw_data()
-    train = next((t for t in data.get('trains', []) if str(t.get('id')) == journey_id), None)
+    raw_id = extract_raw_journey_id(journey_id)
+    train = next((t for t in data.get('trains', []) if str(t.get('id')) in (journey_id, raw_id)), None)
     if not train:
         return None
 
     is_sleeper = train.get('network') == 'european_sleeper'
-    net_id = 2 if is_sleeper else 1
+    net_id = "BE:Network:EuropeanSleeper" if is_sleeper else "FR:Network:Eurostar"
+    line_id = "BE:Line:EuropeanSleeper" if is_sleeper else "FR:Line:Eurostar"
+    journey_netex_id = format_journey_id(train.get('id'), is_sleeper)
     tz_offset = 2
 
     # Construction des calls (arrêts)
@@ -205,15 +263,12 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
         else:
             call_status = "SCHEDULED"
 
-        # Code UIC officiel NeTEx (priorité à stop_code, sinon fallback stop_id)
-        stop_uic = s.get('stop_code') or s.get('stop_id') or str(idx)
-
         calls.append({
             "aimedTime": aimed_dep or aimed_arr,
             "expectedTime": expected_dep or expected_arr,
             "aimedArrivalTime": aimed_arr,
             "expectedArrivalTime": expected_arr,
-            "stopRef": f"{'SLEEPER' if is_sleeper else 'EUROSTAR'}:StopPoint:{stop_uic}",
+            "stopRef": get_netex_stop_ref(s, is_sleeper),
             "stopName": s.get('name', ''),
             "stopOrder": idx,
             "distanceTraveled": round(cum_distance, 1),
@@ -226,11 +281,12 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
 
     now_iso = datetime.now(timezone.utc).isoformat()
     shape_id = train.get('shape_id')
+    path_ref = f"{'BE:Sleeper' if is_sleeper else 'FR:Eurostar'}:Route:{shape_id}" if shape_id else None
 
     return {
-        "id": str(train.get('id')),
+        "id": journey_netex_id,
         "countryCode": "BE" if is_sleeper else "FR",
-        "lineId": net_id,
+        "lineId": line_id,
         "destination": train.get('destination', ''),
         "calls": calls,
         "position": {
@@ -242,11 +298,12 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
             "distanceTraveled": round(cum_distance * train.get('progress', 0.0), 1),
             "recordedAt": now_iso
         },
-        "pathRef": f"PATH:{shape_id}" if shape_id else None,
+        "pathRef": path_ref,
         "networkId": net_id,
-        "journeyRef": str(train.get('id')),
+        "journeyRef": journey_netex_id,
         "vehicle": {
-            "number": str(train.get('num', ''))
+            "number": str(train.get('num', '')),
+            "ref": f"{'BE:Sleeper' if is_sleeper else 'FR:Eurostar'}:Vehicle:{train.get('num', '')}"
         },
         "serviceDate": datetime.now(EUROSTAR_TZ).strftime("%Y-%m-%d"),
         "updatedAt": now_iso
@@ -254,7 +311,8 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
 
 def get_journey_path(journey_id: str) -> Optional[Dict[str, Any]]:
     data = get_cached_raw_data()
-    train = next((t for t in data.get('trains', []) if str(t.get('id')) == journey_id), None)
+    raw_id = extract_raw_journey_id(journey_id)
+    train = next((t for t in data.get('trains', []) if str(t.get('id')) in (journey_id, raw_id)), None)
     if not train:
         return None
 
