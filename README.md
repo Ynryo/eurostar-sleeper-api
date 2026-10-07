@@ -41,6 +41,7 @@ eurostar-sleeper-api/
 ├── gtfs_service.py           # Ingestion GTFS/GTFS-RT, statuts radar et interpolation
 ├── rail_routing_service.py   # Client BRouter ferroviaire, simplification RDP et cache
 ├── rail_shapes_cache.json    # Cache local des géométries de voies calculées
+├── regenerate_shapes.py      # Outil CLI de maintenance et régénération des tracés BRouter
 ├── static/                   # Frontend Web temps réel (Leaflet, JS Vanilla, CSS moderne)
 │   ├── index.html
 │   ├── style.css
@@ -125,6 +126,18 @@ pip install -r requirements.txt
 python gtfs.py
 ```
 
+### Maintenance du cache des tracés (BRouter)
+
+Pour rafraîchir ou recalculer les polylines ferroviaires OpenStreetMap sans impacter l'API :
+
+```bash
+# Vérifier et ne recalculer que les tracés manquants ou en ligne droite
+python regenerate_shapes.py --fallback-only
+
+# Rafraîchir l'ensemble du cache avec délai de courtoisie (recommandé : 1s)
+python regenerate_shapes.py --delay 1.0
+```
+
 ---
 
 ## 🛠️ Sources de Données
@@ -135,16 +148,6 @@ python gtfs.py
 | **Eurostar** | GTFS-RT (Temps Réel) | `https://integration-storage.dm.eurostar.com/gtfs-prod/gtfs_rt_v2.bin` |
 | **European Sleeper** | GTFS Statique | `https://raw.githubusercontent.com/deryclem/european-sleeper-gtfs/main/gtfs-european-sleeper.zip` |
 | **OpenStreetMap** | Routage Ferroviaire | API BRouter (`profile=rail`) |
-
----
-
-## 🌿 Git Flow & Conventions
-
-Le projet applique un flux **Git Flow** strict :
-- **`main`** : Version de production stable (releases taguées `v1.x.x`).
-- **`develop`** : Branche d'intégration continue des fonctionnalités.
-- **Branches de travail** : `feature/*`, `fix/*`, `chore/*`, `docs/*`.
-- **Commits** : Norme [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`).
 
 ---
 
