@@ -11,8 +11,12 @@ Usage :
 
 import os
 import sys
+import io
+import csv
+import math
 import json
 import time
+import zipfile
 import argparse
 import urllib.request
 from typing import Dict, List, Tuple
@@ -24,7 +28,57 @@ if sys.platform == "win32":
     except AttributeError:
         pass
 
+from config import STATIC_CACHE_FILE, EUROPEAN_SLEEPER_CACHE_FILE, STATION_NAMES
 from rail_routing_service import CACHE_FILE, rdp_simplify
+
+
+def load_known_stations() -> Dict[str, Tuple[float, float]]:
+    """Charge l'ensemble des gares Eurostar et European Sleeper pour identifier les segments."""
+    stations: Dict[str, Tuple[float, float]] = {}
+
+    for zpath in [STATIC_CACHE_FILE, EUROPEAN_SLEEPER_CACHE_FILE]:
+        if os.path.exists(zpath):
+            try:
+                with zipfile.ZipFile(zpath) as zf:
+                    if 'stops.txt' in zf.namelist():
+                        with zf.open('stops.txt') as f:
+                            for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8')):
+                                name = r.get('stop_name', '').strip()
+                                lat = float(r['stop_lat'])
+                                lon = float(r['stop_lon'])
+                                # Nettoyage esthétique des noms
+                                name = (
+                                    name.replace('-International', ' Int.')
+                                    .replace(' hl.n. (main station)', ' hl.n.')
+                                )
+                                stations[name] = (lat, lon)
+            except Exception:
+                pass
+    return stations
+
+
+def get_segment_label(
+    lat1: float,
+    lon1: float,
+    lat2: float,
+    lon2: float,
+    stations_map: Dict[str, Tuple[float, float]]
+) -> str:
+    """Retrouve les noms des gares d'origine et de destination les plus proches."""
+    def find_nearest(lat: float, lon: float) -> str:
+        best_name = f"({lat:.2f}, {lon:.2f})"
+        best_dist = 999999.0
+        for name, (slat, slon) in stations_map.items():
+            d = math.hypot((lat - slat) * 111, (lon - slon) * 111 * math.cos(math.radians(lat)))
+            if d < best_dist:
+                best_dist = d
+                best_name = name
+        return best_name if best_dist < 15.0 else f"({lat:.2f}, {lon:.2f})"
+
+    s1 = find_nearest(lat1, lon1)
+    s2 = find_nearest(lat2, lon2)
+    dist_km = math.hypot((lat2 - lat1) * 111, (lon2 - lon1) * 111 * math.cos(math.radians(lat1)))
+    return f"{s1} -> {s2} (~{dist_km:.0f} km)"
 
 
 def parse_key_coordinates(key: str) -> Tuple[float, float, float, float]:
@@ -66,6 +120,8 @@ def regenerate_cache(
     print(f"⚙️  Mode : {'Forcer tout' if force else 'Fallback / Lignes droites uniquement' if fallback_only else 'Mise à jour standard'}")
     print("=" * 75)
 
+    stations_map = load_known_stations()
+
     if not os.path.exists(cache_path):
         print(f"⚠️ Le fichier de cache {cache_path} n'existe pas. Création d'un nouveau dictionnaire.")
         cache = {}
@@ -87,17 +143,19 @@ def regenerate_cache(
     for idx, (key, existing_pts) in enumerate(cache.items(), 1):
         is_fallback_segment = len(existing_pts) <= 2
 
-        if fallback_only and not is_fallback_segment:
-            skipped_count += 1
-            continue
-
         try:
             lat1, lon1, lat2, lon2 = parse_key_coordinates(key)
+            label = get_segment_label(lat1, lon1, lat2, lon2, stations_map)
         except Exception as e:
-            print(f"[{idx}/{total_keys}] ⚠️ Clé invalide {key} ({e}), ignorée.")
+            print(f"[{idx:02d}/{total_keys}] ⚠️ Clé invalide {key} ({e}), ignorée.")
             continue
 
-        prefix = f"[{idx}/{total_keys}] {key}"
+        prefix = f"[{idx:02d}/{total_keys}] {label}"
+
+        if fallback_only and not is_fallback_segment:
+            skipped_count += 1
+            print(f"{prefix} -> ⏭️  Déjà résolu ({len(existing_pts)} pts)")
+            continue
 
         try:
             new_pts = fetch_brouter_segment(lat1, lon1, lat2, lon2, timeout=timeout)
@@ -121,16 +179,16 @@ def regenerate_cache(
     temp_file = f"{cache_path}.tmp"
     with open(temp_file, 'w', encoding='utf-8') as f:
         json.dump(updated_cache, f)
-    
+
     if os.path.exists(cache_path):
         os.remove(cache_path)
     os.rename(temp_file, cache_path)
 
     print("\n" + "=" * 75)
     print("📊 BILAN DE L'OPÉRATION")
-    print(f"• Total segments examinés  : {total_keys}")
-    print(f"• Segments mis à jour      : {updated_count}")
-    print(f"• Segments préservés/échec : {preserved_count}")
+    print(f"• Total segments examinés   : {total_keys}")
+    print(f"• Segments mis à jour       : {updated_count}")
+    print(f"• Segments préservés/échec  : {preserved_count}")
     if fallback_only:
         print(f"• Segments ignorés (déjà OK): {skipped_count}")
     print(f"💾 Cache sauvegardé avec succès dans : {cache_path}")

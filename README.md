@@ -151,16 +151,6 @@ python regenerate_shapes.py --delay 1.0
 
 ---
 
-## 🌿 Git Flow & Conventions
-
-Le projet applique un flux **Git Flow** strict :
-- **`main`** : Version de production stable (releases taguées `v1.x.x`).
-- **`develop`** : Branche d'intégration continue des fonctionnalités.
-- **Branches de travail** : `feature/*`, `fix/*`, `chore/*`, `docs/*`.
-- **Commits** : Norme [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`).
-
----
-
 ## 👤 Auteur & Maintenance
 
 Développé par **Ynryo** ([@Ynryo](https://github.com/Ynryo)) dans le cadre de la plateforme de transport **[Spotted](https://api.spotted.ynryo.fr)**.
