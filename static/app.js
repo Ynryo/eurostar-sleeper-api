@@ -152,10 +152,12 @@ async function fetchNetworks() {
             networksData = await res.json();
             // Met à jour les couleurs des variables CSS si nécessaire
             networksData.forEach(net => {
-                if (net.color && net.id.includes('Eurostar')) {
+                const isEurostar = String(net.id) === '101' || net.ref?.includes('Eurostar') || net.name?.includes('Eurostar');
+                const isSleeper = String(net.id) === '102' || net.ref?.includes('Sleeper') || net.name?.includes('Sleeper');
+                if (net.color && isEurostar) {
                     document.documentElement.style.setProperty('--eurostar-brand', `#${net.color}`);
                 }
-                if (net.color && net.id.includes('Sleeper')) {
+                if (net.color && isSleeper) {
                     document.documentElement.style.setProperty('--sleeper-brand', `#${net.color}`);
                 }
             });
@@ -510,8 +512,9 @@ async function selectTrain(journeyId, shouldFly = true) {
     if (!details) return;
 
     // Affichage du tracé GPS sur la carte
-    if (pathData && pathData.path && pathData.path.length > 1) {
-        const routePts = pathData.path.map(pt => [pt[0], pt[1]]);
+    const polyPts = pathData?.path?.p || (Array.isArray(pathData?.path) ? pathData.path : []);
+    if (polyPts && polyPts.length > 1) {
+        const routePts = polyPts.map(pt => [pt[0], pt[1]]);
         const isSleeper = getMarkerNetwork({ id: journeyId }) === 'european_sleeper';
         const glowColor = isSleeper ? '#FF3602' : '#116BFE';
         const coreColor = isSleeper ? '#ffedd5' : '#dbeafe';
