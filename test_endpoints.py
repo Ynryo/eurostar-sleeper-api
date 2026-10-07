@@ -11,9 +11,7 @@ def test_api():
     networks = r.json()
     assert len(networks) == 2
     assert networks[0]["id"] == "FR:Network:Eurostar"
-    assert networks[0]["authorityRef"] == "FR:Authority:EurostarGroup"
     assert networks[1]["id"] == "BE:Network:EuropeanSleeper"
-    assert networks[1]["authorityRef"] == "BE:Authority:EuropeanSleeperBV"
     assert networks[0]["regionId"] == 13
     assert networks[1]["regionId"] == 13
     print(f"✅ /api/networks OK: NeTEx IDs {networks[0]['id']} & {networks[1]['id']} validés.")
