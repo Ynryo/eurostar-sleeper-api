@@ -15,6 +15,7 @@ from config import HOST, PORT, STATIC_DIR
 from api_models import (
     NetworkItem,
     NetworkLineItem,
+    NetworkDetails,
     MarkerCollection,
     JourneyDetails,
     JourneyPath
@@ -74,6 +75,27 @@ def get_lines(network_id: str):
     if lines is None:
         raise HTTPException(status_code=404, detail="Réseau non trouvé")
     return lines
+
+@app.get(
+    "/api/networks/{network_id:path}",
+    response_model=NetworkDetails,
+    tags=["Networks"],
+    summary="Détails d'un réseau avec ses lignes associées (compatible BusTrackerClient ?withDetails=true)"
+)
+def get_network_details_endpoint(network_id: str, withDetails: bool = False):
+    s_id = str(network_id).strip()
+    net = next((
+        n for n in get_networks_list() 
+        if str(n["id"]) == s_id 
+        or n["ref"] == s_id 
+        or n.get("networkRef") == s_id
+        or (s_id in ("1", "101") and "Eurostar" in n["name"]) 
+        or (s_id in ("2", "102") and "Sleeper" in n["name"])
+    ), None)
+    if not net:
+        raise HTTPException(status_code=404, detail="Réseau non trouvé")
+    lines = get_network_lines(network_id) or []
+    return {**net, "lines": lines, "operators": []}
 
 # =========================================================================
 # Endpoints Trajets & Positions Temps Réel

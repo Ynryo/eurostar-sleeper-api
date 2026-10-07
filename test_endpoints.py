@@ -18,6 +18,22 @@ def test_api():
     assert networks[1]["regionId"] == 16
     print(f"✅ /api/networks OK: IDs entiers ({networks[0]['id']}, {networks[1]['id']}) et NeTEx refs ({networks[0]['ref']}, {networks[1]['ref']}) validés.")
 
+    print("Testing /api/networks/101?withDetails=true (BusTrackerClient.php contract)...")
+    r_details = client.get("/api/networks/101?withDetails=true")
+    assert r_details.status_code == 200
+    net_details = r_details.json()
+    assert net_details["id"] == 101
+    assert "lines" in net_details
+    assert len(net_details["lines"]) == 1
+    assert net_details["lines"][0]["id"] == 1010
+    print(f"✅ /api/networks/101?withDetails=true OK: {len(net_details['lines'])} ligne(s) rattachée(s) (lineId: {net_details['lines'][0]['id']})")
+
+    print("Testing /api/networks/102?withDetails=true (Sleeper)...")
+    r_details_sl = client.get("/api/networks/102?withDetails=true")
+    assert r_details_sl.status_code == 200
+    assert r_details_sl.json()["lines"][0]["id"] == 1020
+    print(f"✅ /api/networks/102?withDetails=true OK (lineId: 1020)")
+
     print("Testing /api/networks/101/lines (Spotted-API Numeric ID)...")
     r = client.get("/api/networks/101/lines")
     assert r.status_code == 200
