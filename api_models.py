@@ -100,7 +100,6 @@ class JourneyDetails(BaseModel):
     id: str
     countryCode: str = "FR"
     lineId: Union[int, str]
-    direction: str = "OUTBOUND"
     destination: str
     calls: List[JourneyCall]
     position: JourneyPosition
