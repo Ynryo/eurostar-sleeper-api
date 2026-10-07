@@ -41,6 +41,7 @@ eurostar-sleeper-api/
 ├── gtfs_service.py           # Ingestion GTFS/GTFS-RT, statuts radar et interpolation
 ├── rail_routing_service.py   # Client BRouter ferroviaire, simplification RDP et cache
 ├── rail_shapes_cache.json    # Cache local des géométries de voies calculées
+├── regenerate_shapes.py      # Outil CLI de maintenance et régénération des tracés BRouter
 ├── static/                   # Frontend Web temps réel (Leaflet, JS Vanilla, CSS moderne)
 │   ├── index.html
 │   ├── style.css
@@ -123,6 +124,18 @@ pip install -r requirements.txt
 
 # Démarrer le serveur
 python gtfs.py
+```
+
+### Maintenance du cache des tracés (BRouter)
+
+Pour rafraîchir ou recalculer les polylines ferroviaires OpenStreetMap sans impacter l'API :
+
+```bash
+# Vérifier et ne recalculer que les tracés manquants ou en ligne droite
+python regenerate_shapes.py --fallback-only
+
+# Rafraîchir l'ensemble du cache avec délai de courtoisie (recommandé : 1s)
+python regenerate_shapes.py --delay 1.0
 ```
 
 ---
