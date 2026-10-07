@@ -34,42 +34,19 @@ def test_api():
     assert r_details_sl.json()["lines"][0]["id"] == 1020
     print(f"✅ /api/networks/102?withDetails=true OK (lineId: 1020)")
 
-    print("Testing /api/networks/101/lines (Spotted-API Numeric ID)...")
-    r = client.get("/api/networks/101/lines")
-    assert r.status_code == 200
-    lines = r.json()
-    assert len(lines) == 1
-    assert lines[0]["id"] == 1010
-    assert lines[0]["ref"] == "FR:Line:Eurostar"
-    assert "FR:Line:Eurostar" in lines[0]["references"]
-    print(f"✅ /api/networks/101/lines OK (lineId entier 1010): {lines[0]['id']}")
+    print("Testing /api/networks/FR:Network:Eurostar?withDetails=true (NeTEx URN)...")
+    r_netex_d = client.get("/api/networks/FR:Network:Eurostar?withDetails=true")
+    assert r_netex_d.status_code == 200
+    assert r_netex_d.json()["id"] == 101
+    assert r_netex_d.json()["lines"][0]["id"] == 1010
+    print("✅ /api/networks/FR:Network:Eurostar?withDetails=true OK.")
 
-    print("Testing /api/networks/1/lines (Legacy ID)...")
-    r_leg_id = client.get("/api/networks/1/lines")
-    assert r_leg_id.status_code == 200
-    assert r_leg_id.json()[0]["id"] == 1010
-    print("✅ /api/networks/1/lines OK (compatibilité legacy).")
-
-    print("Testing /api/networks/FR:Network:Eurostar/lines (NeTEx ID)...")
-    r_netex = client.get("/api/networks/FR:Network:Eurostar/lines")
-    assert r_netex.status_code == 200
-    assert r_netex.json()[0]["id"] == 1010
-    print("✅ /api/networks/FR:Network:Eurostar/lines OK (NeTEx URN).")
-
-    print("Testing /api/networks/102/lines (Spotted-API Numeric ID Sleeper)...")
-    r = client.get("/api/networks/102/lines")
-    assert r.status_code == 200
-    lines2 = r.json()
-    assert len(lines2) == 1
-    assert lines2[0]["id"] == 1020
-    assert lines2[0]["ref"] == "BE:Line:EuropeanSleeper"
-    print(f"✅ /api/networks/102/lines OK: lineId {lines2[0]['id']}")
-
-    print("Testing /api/networks/BE:Network:EuropeanSleeper/lines (NeTEx ID)...")
-    r_sleeper = client.get("/api/networks/BE:Network:EuropeanSleeper/lines")
-    assert r_sleeper.status_code == 200
-    assert r_sleeper.json()[0]["id"] == 1020
-    print("✅ /api/networks/BE:Network:EuropeanSleeper/lines OK (NeTEx URN).")
+    print("Testing /api/networks/BE:Network:EuropeanSleeper?withDetails=true (NeTEx URN)...")
+    r_sleeper_d = client.get("/api/networks/BE:Network:EuropeanSleeper?withDetails=true")
+    assert r_sleeper_d.status_code == 200
+    assert r_sleeper_d.json()["id"] == 102
+    assert r_sleeper_d.json()["lines"][0]["id"] == 1020
+    print("✅ /api/networks/BE:Network:EuropeanSleeper?withDetails=true OK.")
 
     print("Testing /api/vehicle-journeys/markers...")
     r = client.get("/api/vehicle-journeys/markers")

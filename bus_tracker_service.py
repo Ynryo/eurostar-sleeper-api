@@ -136,8 +136,6 @@ def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
         if str(n["id"]) == s_id 
         or n["ref"] == s_id 
         or n.get("networkRef") == s_id
-        or (s_id in ("1", "101") and "Eurostar" in n["name"]) 
-        or (s_id in ("2", "102") and "Sleeper" in n["name"])
     ), None)
 
     if not net:

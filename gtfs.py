@@ -65,22 +65,10 @@ def get_networks():
     return get_networks_list()
 
 @app.get(
-    "/api/networks/{network_id:path}/lines",
-    response_model=List[NetworkLineItem],
-    tags=["Networks"],
-    summary="Liste des lignes d'un réseau de transport"
-)
-def get_lines(network_id: str):
-    lines = get_network_lines(network_id)
-    if lines is None:
-        raise HTTPException(status_code=404, detail="Réseau non trouvé")
-    return lines
-
-@app.get(
     "/api/networks/{network_id:path}",
     response_model=NetworkDetails,
     tags=["Networks"],
-    summary="Détails d'un réseau avec ses lignes associées (compatible BusTrackerClient ?withDetails=true)"
+    summary="Détails d'un réseau avec ses lignes associées (contrat BusTrackerClient ?withDetails=true)"
 )
 def get_network_details_endpoint(network_id: str, withDetails: bool = False):
     s_id = str(network_id).strip()
@@ -89,8 +77,6 @@ def get_network_details_endpoint(network_id: str, withDetails: bool = False):
         if str(n["id"]) == s_id 
         or n["ref"] == s_id 
         or n.get("networkRef") == s_id
-        or (s_id in ("1", "101") and "Eurostar" in n["name"]) 
-        or (s_id in ("2", "102") and "Sleeper" in n["name"])
     ), None)
     if not net:
         raise HTTPException(status_code=404, detail="Réseau non trouvé")
