@@ -1,13 +1,17 @@
 services:
-  eurostar-radar:
+  eurostar-sleeper-radar:
     build: .
-    container_name: eurostar-radar
+    container_name: eurostar-sleeper-radar
     restart: unless-stopped
-    ports:
-      - "8080:8080"
     volumes:
       - .:/app
     environment:
       - PORT=8080
       - HOST=0.0.0.0
       - TZ=Europe/Paris
+    networks:
+      - spotted-network
+
+networks:
+  spotted-network:
+    external: true
