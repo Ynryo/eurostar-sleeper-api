@@ -41,6 +41,7 @@ eurostar-sleeper-api/
 ├── gtfs_service.py           # Ingestion GTFS/GTFS-RT, statuts radar et interpolation
 ├── rail_routing_service.py   # Client BRouter ferroviaire, simplification RDP et cache
 ├── rail_shapes_cache.json    # Cache local des géométries de voies calculées
+├── regenerate_shapes.py      # Outil CLI de maintenance et régénération des tracés BRouter
 ├── static/                   # Frontend Web temps réel (Leaflet, JS Vanilla, CSS moderne)
 │   ├── index.html
 │   ├── style.css
@@ -55,45 +56,49 @@ eurostar-sleeper-api/
 
 ## 🔌 Points d'Accès API
 
-### `GET /api/data`
-Retourne l'état complet du réseau ferroviaire en direct.
+La documentation interactive **OpenAPI / Swagger** est accessible directement sur `http://localhost:8080/docs`.
 
-#### Exemple de structure de réponse :
-```json
-{
-  "timestamp": "16:45:00",
-  "date": "06/10/2026",
-  "networks": [
-    { "id": "all", "name": "Tous les réseaux", "badge": "🌐" },
-    { "id": "eurostar", "name": "Eurostar", "badge": "🚆", "color": "#00d2ff" },
-    { "id": "european_sleeper", "name": "European Sleeper (Nuit)", "badge": "🌙", "color": "#a855f7" }
-  ],
-  "trains": [
-    {
-      "id": "9028-1006",
-      "num": "9028",
-      "headsign": "Paris Gare du Nord",
-      "origin": "Londres St Pancras Int.",
-      "destination": "Paris Gare du Nord",
-      "status": "RUNNING",
-      "status_label": "En circulation vers Paris Gare du Nord (65%)",
-      "lat": 50.1867,
-      "lon": 2.8708,
-      "bearing": 182.4,
-      "progress": 0.65,
-      "delay_sec": 120,
-      "delay_str": "+2 min",
-      "time_to_dep_sec": -5820,
-      "is_departing_soon": false,
-      "network": "eurostar",
-      "operator_name": "Eurostar",
-      "shape_id": "CORRIDOR_GBSPX_FRPNO"
-    }
-  ],
-  "stations": [...],
-  "shapes_dict": { ... }
-}
-```
+### 1. `GET /api/networks`
+Retourne la liste des réseaux gérés (Eurostar, European Sleeper) selon le standard Bus-Tracker.
+- **Réponse :** `[{"id": 1, "ref": "EUROSTAR", "name": "Eurostar", "color": "00D2FF", "regionId": 13, ...}]`
+
+### 2. `GET /api/networks/{network_id}/lines`
+Retourne la liste des lignes de transport associées au réseau.
+
+### 3. `GET /api/vehicle-journeys/markers`
+Flux temps réel allégé pour la cartographie, avec filtrage optionnel par bounding box.
+- **Query params :** `swLat`, `swLon`, `neLat`, `neLon` (optionnels)
+- **Réponse :**
+  ```json
+  {
+    "items": [
+      {
+        "id": "9028-1006",
+        "lineNumber": "9028",
+        "vehicleNumber": "9028",
+        "color": "#FFFFFF",
+        "fillColor": "#00D2FF",
+        "position": {
+          "latitude": 50.1867,
+          "longitude": 2.8708,
+          "bearing": 182.4,
+          "type": "COMPUTED"
+        }
+      }
+    ],
+    "at": "2026-10-06T15:58:00Z"
+  }
+  ```
+
+### 4. `GET /api/vehicle-journeys/{journey_id}`
+Fiche détaillée d'un trajet de train avec arrêts formatés selon la nomenclature NeTEx/UIC (`EUROSTAR:StopPoint:{CodeUIC}`), horaires ISO 8601, retards, voies/quais et position temps réel.
+
+### 5. `GET /api/vehicle-journeys/{journey_id}/paths` *(ou `/api/paths/{path_id}`)*
+Tracé ferroviaire 3D précis du train avec distance cumulée en mètres :
+- **Réponse :** `{"path": [[lat, lon, distanceTraveled], ...]}`
+
+### 6. `GET /api/data` *(Legacy)*
+Conservé pour rétrocompatibilité totale avec le frontend Leaflet existant.
 
 ---
 
@@ -121,6 +126,18 @@ pip install -r requirements.txt
 python gtfs.py
 ```
 
+### Maintenance du cache des tracés (BRouter)
+
+Pour rafraîchir ou recalculer les polylines ferroviaires OpenStreetMap sans impacter l'API :
+
+```bash
+# Vérifier et ne recalculer que les tracés manquants ou en ligne droite
+python regenerate_shapes.py --fallback-only
+
+# Rafraîchir l'ensemble du cache avec délai de courtoisie (recommandé : 1s)
+python regenerate_shapes.py --delay 1.0
+```
+
 ---
 
 ## 🛠️ Sources de Données
@@ -131,16 +148,6 @@ python gtfs.py
 | **Eurostar** | GTFS-RT (Temps Réel) | `https://integration-storage.dm.eurostar.com/gtfs-prod/gtfs_rt_v2.bin` |
 | **European Sleeper** | GTFS Statique | `https://raw.githubusercontent.com/deryclem/european-sleeper-gtfs/main/gtfs-european-sleeper.zip` |
 | **OpenStreetMap** | Routage Ferroviaire | API BRouter (`profile=rail`) |
-
----
-
-## 🌿 Git Flow & Conventions
-
-Le projet applique un flux **Git Flow** strict :
-- **`main`** : Version de production stable (releases taguées `v1.x.x`).
-- **`develop`** : Branche d'intégration continue des fonctionnalités.
-- **Branches de travail** : `feature/*`, `fix/*`, `chore/*`, `docs/*`.
-- **Commits** : Norme [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`).
 
 ---
 
