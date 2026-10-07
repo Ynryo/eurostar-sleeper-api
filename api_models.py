@@ -2,8 +2,9 @@ from typing import List, Optional, Any, Dict, Union
 from pydantic import BaseModel, Field
 
 class NetworkItem(BaseModel):
-    id: Union[int, str]
+    id: int
     ref: str
+    networkRef: Optional[str] = None
     name: str
     authority: Optional[str] = None
     authorityRef: Optional[str] = None
@@ -18,7 +19,9 @@ class NetworkItem(BaseModel):
     embedMapCenter: Optional[List[float]] = None
 
 class NetworkLineItem(BaseModel):
-    id: Union[int, str]
+    id: int
+    ref: Optional[str] = None
+    lineRef: Optional[str] = None
     references: List[str] = []
     number: str
     girouetteNumber: Optional[str] = None
@@ -41,7 +44,8 @@ class VehicleActivity(BaseModel):
 
 class VehicleItem(BaseModel):
     id: Union[int, str]
-    networkId: Union[int, str]
+    networkId: int
+    networkRef: Optional[str] = None
     operatorId: Optional[Union[int, str]] = None
     ref: str
     type: str = "TRAIN"
@@ -99,16 +103,22 @@ class JourneyPosition(BaseModel):
 class JourneyDetails(BaseModel):
     id: str
     countryCode: str = "FR"
-    lineId: Union[int, str]
+    lineId: int
+    lineRef: Optional[str] = None
     destination: str
     calls: List[JourneyCall]
     position: JourneyPosition
     pathRef: Optional[str] = None
-    networkId: Union[int, str]
+    networkId: int
+    networkRef: Optional[str] = None
     journeyRef: str
     vehicle: Dict[str, Any]
     serviceDate: str
     updatedAt: str
 
+class PathPolyline(BaseModel):
+    p: List[List[float]] = []
+    cancelled: List[str] = []
+
 class JourneyPath(BaseModel):
-    path: List[List[float]]
+    path: PathPolyline

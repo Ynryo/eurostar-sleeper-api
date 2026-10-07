@@ -91,11 +91,12 @@ def extract_raw_journey_id(journey_id: str) -> str:
 
 NETWORKS_METADATA = [
     {
-        "id": "FR:Network:Eurostar",
-        "numeric_id": 1,
+        "id": 101,
         "ref": "FR:Network:Eurostar",
+        "networkRef": "FR:Network:Eurostar",
         "name": "Eurostar",
         "authority": "Eurostar Group",
+        "authorityRef": "FR:Authority:EurostarGroup",
         "countryCode": "FR",
         "timezone": "Europe/Paris",
         "logoHref": "https://upload.wikimedia.org/wikipedia/commons/3/33/Eurostar_logo_%282023%29.svg",
@@ -103,15 +104,16 @@ NETWORKS_METADATA = [
         "color": "116BFE",
         "textColor": "000000",
         "hasVehiclesFeature": True,
-        "regionId": 13,
+        "regionId": 16,
         "embedMapCenter": [2.355, 48.88, 7]
     },
     {
-        "id": "BE:Network:EuropeanSleeper",
-        "numeric_id": 2,
+        "id": 102,
         "ref": "BE:Network:EuropeanSleeper",
+        "networkRef": "BE:Network:EuropeanSleeper",
         "name": "European Sleeper",
         "authority": "European Sleeper BV",
+        "authorityRef": "BE:Authority:EuropeanSleeperBV",
         "countryCode": "BE",
         "timezone": "Europe/Brussels",
         "logoHref": "https://upload.wikimedia.org/wikipedia/commons/3/3d/European_Sleeper_Logo.svg",
@@ -119,7 +121,7 @@ NETWORKS_METADATA = [
         "color": "FF3602",
         "textColor": "FFFFFF",
         "hasVehiclesFeature": True,
-        "regionId": 13,
+        "regionId": 16,
         "embedMapCenter": [4.35, 50.85, 6]
     }
 ]
@@ -132,10 +134,10 @@ def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
     net = next((
         n for n in NETWORKS_METADATA 
         if str(n["id"]) == s_id 
-        or str(n.get("numeric_id")) == s_id 
         or n["ref"] == s_id 
-        or (s_id == "1" and "Eurostar" in n["name"]) 
-        or (s_id == "2" and "Sleeper" in n["name"])
+        or n.get("networkRef") == s_id
+        or (s_id in ("1", "101") and "Eurostar" in n["name"]) 
+        or (s_id in ("2", "102") and "Sleeper" in n["name"])
     ), None)
 
     if not net:
@@ -148,7 +150,9 @@ def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
     if "Eurostar" in net["name"]:
         return [
             {
-                "id": "FR:Line:Eurostar",
+                "id": 1010,
+                "ref": "FR:Line:Eurostar",
+                "lineRef": "FR:Line:Eurostar",
                 "references": ["FR:Line:Eurostar", "EUROSTAR:Line:1"],
                 "number": "Eurostar",
                 "girouetteNumber": None,
@@ -164,7 +168,9 @@ def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
     elif "Sleeper" in net["name"]:
         return [
             {
-                "id": "BE:Line:EuropeanSleeper",
+                "id": 1020,
+                "ref": "BE:Line:EuropeanSleeper",
+                "lineRef": "BE:Line:EuropeanSleeper",
                 "references": ["BE:Line:EuropeanSleeper", "EUROPEAN_SLEEPER:Line:1"],
                 "number": "European Sleeper",
                 "girouetteNumber": None,
@@ -236,8 +242,10 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
         return None
 
     is_sleeper = train.get('network') == 'european_sleeper'
-    net_id = "BE:Network:EuropeanSleeper" if is_sleeper else "FR:Network:Eurostar"
-    line_id = "BE:Line:EuropeanSleeper" if is_sleeper else "FR:Line:Eurostar"
+    net_id = 102 if is_sleeper else 101
+    net_ref = "BE:Network:EuropeanSleeper" if is_sleeper else "FR:Network:Eurostar"
+    line_id = 1020 if is_sleeper else 1010
+    line_ref = "BE:Line:EuropeanSleeper" if is_sleeper else "FR:Line:Eurostar"
     journey_netex_id = format_journey_id(train.get('id'), is_sleeper)
     tz_offset = 2
 
@@ -287,6 +295,7 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
         "id": journey_netex_id,
         "countryCode": "BE" if is_sleeper else "FR",
         "lineId": line_id,
+        "lineRef": line_ref,
         "destination": train.get('destination', ''),
         "calls": calls,
         "position": {
@@ -300,6 +309,7 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
         },
         "pathRef": path_ref,
         "networkId": net_id,
+        "networkRef": net_ref,
         "journeyRef": journey_netex_id,
         "vehicle": {
             "number": str(train.get('num', '')),
@@ -324,7 +334,12 @@ def get_journey_path(journey_id: str) -> Optional[Dict[str, Any]]:
         raw_coords = [[s['lat'], s['lon']] for s in train['stops'] if not s.get('is_skipped')]
 
     if not raw_coords:
-        return {"path": []}
+        return {
+            "path": {
+                "p": [],
+                "cancelled": []
+            }
+        }
 
     path_3d = []
     cum_dist = 0.0
@@ -333,4 +348,9 @@ def get_journey_path(journey_id: str) -> Optional[Dict[str, Any]]:
             cum_dist += haversine(raw_coords[idx-1][0], raw_coords[idx-1][1], pt[0], pt[1])
         path_3d.append([round(pt[0], 6), round(pt[1], 6), round(cum_dist, 1)])
 
-    return {"path": path_3d}
+    return {
+        "path": {
+            "p": path_3d,
+            "cancelled": []
+        }
+    }
