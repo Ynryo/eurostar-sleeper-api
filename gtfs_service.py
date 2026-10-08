@@ -157,8 +157,23 @@ def get_european_sleeper_gtfs():
     with open(EUROPEAN_SLEEPER_CACHE_FILE, 'rb') as f:
         return zipfile.ZipFile(io.BytesIO(f.read()))
 
-def build_eurostar_data():
-    """Analyse le réseau Eurostar (GTFS statique + GTFS-RT)."""
+_eurostar_static_cache = None
+_eurostar_static_cache_time = 0
+_eurostar_static_date = None
+
+def get_eurostar_static_data():
+    """Charge et indexe en mémoire les données statiques Eurostar (Cache long 24h / CacheTtl::LONG)."""
+    global _eurostar_static_cache, _eurostar_static_cache_time, _eurostar_static_date
+    now = datetime.now(EUROSTAR_TZ)
+    today_suffix = now.strftime('%m%d')
+    now_ts = time.time()
+
+    if (_eurostar_static_cache is not None and 
+        (now_ts - _eurostar_static_cache_time < 86400) and 
+        _eurostar_static_date == today_suffix):
+        return _eurostar_static_cache
+
+    print("🚄 Indexation en mémoire du GTFS statique Eurostar (24h / CacheTtl::LONG)...")
     zf = get_static_gtfs()
 
     # 1. Stops & gares
@@ -239,8 +254,6 @@ def build_eurostar_data():
             shapes_dict['CORRIDOR_FRMLV_NLAMA'] = list(reversed(be_mlv)) + shapes_raw['5814'][::3]
 
     # 3. Trips aujourd'hui
-    now = datetime.now(EUROSTAR_TZ)
-    today_suffix = now.strftime('%m%d')
     today_trips = {}
     with zf.open('trips.txt') as f:
         reader = csv.DictReader(io.TextIOWrapper(f, encoding='utf-8'))
@@ -272,6 +285,28 @@ def build_eurostar_data():
 
     for tid in trip_stops:
         trip_stops[tid].sort(key=lambda x: x['seq'])
+
+    _eurostar_static_cache = {
+        'stops': stops,
+        'stations_map': stations_map,
+        'shapes_dict': shapes_dict,
+        'today_trips': today_trips,
+        'trip_stops': trip_stops
+    }
+    _eurostar_static_cache_time = now_ts
+    _eurostar_static_date = today_suffix
+    return _eurostar_static_cache
+
+def build_eurostar_data():
+    """Analyse le réseau Eurostar (GTFS statique indexé en mémoire + GTFS-RT en direct)."""
+    static_data = get_eurostar_static_data()
+    stops = static_data['stops']
+    stations_map = static_data['stations_map']
+    shapes_dict = static_data['shapes_dict']
+    today_trips = static_data['today_trips']
+    trip_stops = static_data['trip_stops']
+
+    now = datetime.now(EUROSTAR_TZ)
 
     # 5. GTFS-RT (retards & alertes)
     rt_delays = {}
@@ -503,8 +538,23 @@ def build_eurostar_data():
         'stations': list(stations_map.values())
     }
 
-def build_european_sleeper_data():
-    """Analyse le réseau European Sleeper (trains de nuit trans-européens)."""
+_sleeper_static_cache = None
+_sleeper_static_cache_time = 0
+_sleeper_static_date = None
+
+def get_sleeper_static_data():
+    """Charge et indexe en mémoire les données statiques European Sleeper (Cache long 24h / CacheTtl::LONG)."""
+    global _sleeper_static_cache, _sleeper_static_cache_time, _sleeper_static_date
+    now = datetime.now(EUROPEAN_SLEEPER_TZ)
+    today_str = now.strftime('%Y%m%d')
+    now_ts = time.time()
+
+    if (_sleeper_static_cache is not None and
+        (now_ts - _sleeper_static_cache_time < 86400) and
+        _sleeper_static_date == today_str):
+        return _sleeper_static_cache
+
+    print("🌙 Indexation en mémoire du GTFS statique European Sleeper (24h / CacheTtl::LONG)...")
     zf = get_european_sleeper_gtfs()
 
     # 1. Stops & gares
@@ -562,9 +612,6 @@ def build_european_sleeper_data():
         trip_stops[tid].sort(key=lambda x: x['seq'])
 
     # Date de référence
-    now = datetime.now(EUROPEAN_SLEEPER_TZ)
-    now_sec = now.hour * 3600 + now.minute * 60 + now.second
-    today_str = now.strftime('%Y%m%d')
     yesterday_str = (now - timedelta(days=1)).strftime('%Y%m%d')
 
     # Gestion des jours de service actifs (départ hier soir et départ ce soir)
@@ -576,7 +623,6 @@ def build_european_sleeper_data():
         for s in calendar_dates[today_str]:
             active_service_days.append((s, 0))
 
-    # Si la date actuelle n'est pas dans le calendrier (hors saison/archive), repli gracieux sur les dates les plus récentes
     if not active_service_days and calendar_dates:
         all_sorted = sorted(calendar_dates.keys())
         sim_date = all_sorted[0]
@@ -584,7 +630,7 @@ def build_european_sleeper_data():
             active_service_days.append((s, 0))
 
     shapes_dict = {}
-    trains_list = []
+    active_trips_data = []
 
     for sid, day_offset in active_service_days:
         t_meta = trips.get(sid)
@@ -594,26 +640,18 @@ def build_european_sleeper_data():
         if not s_list:
             continue
 
-        # Référence temporelle : si départ hier, l'heure actuelle équivaut à (now_sec + 86400)
-        t_ref = now_sec - (day_offset * 86400)
-
         first_stop = s_list[0]
         last_stop = s_list[-1]
         origin_name = stops[first_stop['stop_id']]['name']
         dest_name = stops[last_stop['stop_id']]['name']
 
         enriched_stops = []
-        shape_pts = []
-
         for s in s_list:
-            st = stops.get(s['stop_id'], {'name': s['stop_id'], 'lat': 0.0, 'lon': 0.0})
-            shape_pts.append([st['lat'], st['lon']])
-
+            st = stops.get(s['stop_id'], {'name': s['stop_id'], 'lat': 0.0, 'lon': 0.0, 'id': s['stop_id']})
             ah = (s['arr_sec'] // 3600) % 24
             am = (s['arr_sec'] % 3600) // 60
             dh = (s['dep_sec'] // 3600) % 24
             dm = (s['dep_sec'] % 3600) // 60
-
             next_day_arr = ' (+1j)' if s['arr_sec'] >= 86400 else ''
             next_day_dep = ' (+1j)' if s['dep_sec'] >= 86400 else ''
 
@@ -621,7 +659,6 @@ def build_european_sleeper_data():
                 'seq': s['seq'],
                 'stop_id': s['stop_id'],
                 'name': st['name'],
-                'stop_id': st['id'],
                 'stop_code': st.get('stop_code', ''),
                 'lat': st['lat'],
                 'lon': st['lon'],
@@ -639,11 +676,61 @@ def build_european_sleeper_data():
                 'is_skipped': False
             })
 
-        # Génération du tracé ferroviaire réel via OpenStreetMap
+        # Génération / récupération du tracé ferroviaire réel via OpenStreetMap
         stops_coords = [[s['lat'], s['lon']] for s in enriched_stops]
         full_rail_pts = rail_router.get_full_route(stops_coords)
         shape_id = f"SHAPE_ES_{sid}"
         shapes_dict[shape_id] = full_rail_pts
+
+        active_trips_data.append({
+            'sid': sid,
+            'day_offset': day_offset,
+            't_meta': t_meta,
+            's_list': s_list,
+            'first_stop': first_stop,
+            'last_stop': last_stop,
+            'origin_name': origin_name,
+            'dest_name': dest_name,
+            'enriched_stops': enriched_stops,
+            'shape_id': shape_id
+        })
+
+    _sleeper_static_cache = {
+        'stops': stops,
+        'stations_map': stations_map,
+        'shapes_dict': shapes_dict,
+        'active_trips': active_trips_data
+    }
+    _sleeper_static_cache_time = now_ts
+    _sleeper_static_date = today_str
+    return _sleeper_static_cache
+
+def build_european_sleeper_data():
+    """Analyse le réseau European Sleeper (données statiques indexées + simulation horaire)."""
+    static_data = get_sleeper_static_data()
+    stops = static_data['stops']
+    stations_map = static_data['stations_map']
+    shapes_dict = static_data['shapes_dict']
+    active_trips = static_data['active_trips']
+
+    now = datetime.now(EUROPEAN_SLEEPER_TZ)
+    now_sec = now.hour * 3600 + now.minute * 60 + now.second
+    trains_list = []
+
+    for item in active_trips:
+        sid = item['sid']
+        day_offset = item['day_offset']
+        t_meta = item['t_meta']
+        s_list = item['s_list']
+        first_stop = item['first_stop']
+        last_stop = item['last_stop']
+        origin_name = item['origin_name']
+        dest_name = item['dest_name']
+        enriched_stops = item['enriched_stops']
+        shape_id = item['shape_id']
+
+        # Référence temporelle : si départ hier, l'heure actuelle équivaut à (now_sec + 86400)
+        t_ref = now_sec - (day_offset * 86400)
 
         time_to_dep_sec = first_stop['dep_sec'] - t_ref
         is_departing_soon = (t_ref < first_stop['dep_sec'] and 0 <= time_to_dep_sec <= 1200)

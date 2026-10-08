@@ -37,7 +37,7 @@
 ```text
 eurostar-sleeper-api/
 ├── config.py                 # Configuration centrale (ports, fuseaux horaires, URLs de flux)
-├── gtfs.py                   # Serveur HTTP multithreadé et distribution de l'API /api/data
+├── gtfs.py                   # Serveur FastAPI et distribution des endpoints temps réel NeTEx
 ├── gtfs_service.py           # Ingestion GTFS/GTFS-RT, statuts radar et interpolation
 ├── rail_routing_service.py   # Client BRouter ferroviaire, simplification RDP et cache
 ├── rail_shapes_cache.json    # Cache local des géométries de voies calculées
@@ -59,11 +59,10 @@ eurostar-sleeper-api/
 La documentation interactive **OpenAPI / Swagger** est accessible directement sur `http://localhost:8080/docs`.
 
 ### 1. `GET /api/networks`
-Retourne la liste des réseaux gérés (Eurostar, European Sleeper) selon le standard Bus-Tracker.
-- **Réponse :** `[{"id": 1, "ref": "EUROSTAR", "name": "Eurostar", "color": "00D2FF", "regionId": 13, ...}]`
+Retourne la liste des réseaux gérés (Eurostar : 101, European Sleeper : 102) selon le standard européen NeTEx et Bus-Tracker.
 
-### 2. `GET /api/networks/{network_id}/lines`
-Retourne la liste des lignes de transport associées au réseau.
+### 2. `GET /api/networks/{network_id}?withDetails=true`
+Retourne la fiche détaillée d'un réseau enrichie de ses lignes actives (`lines`) pour compatibilité native avec `BusTrackerClient` et `spotted-api`.
 
 ### 3. `GET /api/vehicle-journeys/markers`
 Flux temps réel allégé pour la cartographie, avec filtrage optionnel par bounding box.
@@ -73,11 +72,11 @@ Flux temps réel allégé pour la cartographie, avec filtrage optionnel par boun
   {
     "items": [
       {
-        "id": "9028-1006",
+        "id": "FR:Eurostar:VehicleJourney:9028-1006",
         "lineNumber": "9028",
         "vehicleNumber": "9028",
         "color": "#FFFFFF",
-        "fillColor": "#00D2FF",
+        "fillColor": "#116BFE",
         "position": {
           "latitude": 50.1867,
           "longitude": 2.8708,
@@ -91,14 +90,19 @@ Flux temps réel allégé pour la cartographie, avec filtrage optionnel par boun
   ```
 
 ### 4. `GET /api/vehicle-journeys/{journey_id}`
-Fiche détaillée d'un trajet de train avec arrêts formatés selon la nomenclature NeTEx/UIC (`EUROSTAR:StopPoint:{CodeUIC}`), horaires ISO 8601, retards, voies/quais et position temps réel.
+Fiche détaillée d'un trajet de train avec arrêts formatés selon la nomenclature NeTEx/UIC (`FR:StopPoint:{CodeUIC}`, `BE:StopPoint:{CodeUIC}`), horaires ISO 8601, retards, voies/quais et position temps réel.
 
 ### 5. `GET /api/vehicle-journeys/{journey_id}/paths` *(ou `/api/paths/{path_id}`)*
-Tracé ferroviaire 3D précis du train avec distance cumulée en mètres :
-- **Réponse :** `{"path": [[lat, lon, distanceTraveled], ...]}`
-
-### 6. `GET /api/data` *(Legacy)*
-Conservé pour rétrocompatibilité totale avec le frontend Leaflet existant.
+Tracé ferroviaire 3D précis du train avec distance cumulée en mètres compatible `Path.php` (`spotted-api`) :
+- **Réponse :**
+  ```json
+  {
+    "path": {
+      "p": [[50.1867, 2.8708, 0.0], [50.1912, 2.8754, 150.2]],
+      "cancelled": []
+    }
+  }
+  ```
 
 ---
 

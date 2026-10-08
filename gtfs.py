@@ -15,6 +15,7 @@ from config import HOST, PORT, STATIC_DIR
 from api_models import (
     NetworkItem,
     NetworkLineItem,
+    NetworkDetails,
     MarkerCollection,
     JourneyDetails,
     JourneyPath
@@ -64,16 +65,23 @@ def get_networks():
     return get_networks_list()
 
 @app.get(
-    "/api/networks/{network_id:path}/lines",
-    response_model=List[NetworkLineItem],
+    "/api/networks/{network_id:path}",
+    response_model=NetworkDetails,
     tags=["Networks"],
-    summary="Liste des lignes d'un réseau de transport"
+    summary="Détails d'un réseau avec ses lignes associées (contrat BusTrackerClient ?withDetails=true)"
 )
-def get_lines(network_id: str):
-    lines = get_network_lines(network_id)
-    if lines is None:
+def get_network_details_endpoint(network_id: str, withDetails: bool = False):
+    s_id = str(network_id).strip()
+    net = next((
+        n for n in get_networks_list() 
+        if str(n["id"]) == s_id 
+        or n["ref"] == s_id 
+        or n.get("networkRef") == s_id
+    ), None)
+    if not net:
         raise HTTPException(status_code=404, detail="Réseau non trouvé")
-    return lines
+    lines = get_network_lines(network_id) or []
+    return {**net, "lines": lines, "operators": []}
 
 # =========================================================================
 # Endpoints Trajets & Positions Temps Réel
@@ -128,18 +136,6 @@ def get_path_alias(path_id: str):
     if not path_data:
         raise HTTPException(status_code=404, detail="Tracé non trouvé")
     return path_data
-
-# =========================================================================
-# Route de rétrocompatibilité pour le visualiseur Leaflet existant
-# =========================================================================
-
-@app.get(
-    "/api/data",
-    tags=["Legacy"],
-    summary="Flux global hérité (trains, gares, shapes) pour le frontend Leaflet existant"
-)
-def get_legacy_data():
-    return get_cached_raw_data()
 
 # =========================================================================
 # Fichiers statiques et interface web
