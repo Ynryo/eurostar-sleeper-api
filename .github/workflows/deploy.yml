@@ -13,14 +13,14 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          port: ${{ secrets.SSH_PORT || 22 }}
+          host: ${{ secrets.DEBIAN_HOST }}
+          username: ${{ secrets.DEBIAN_USER }}
+          key: ${{ secrets.DEBIAN_SSH_KEY }}
+          port: ${{ secrets.DEBIAN_PORT }}
           script: |
             set -e
             echo "🚀 Déploiement en cours..."
-            cd ${{ secrets.DEPLOY_PATH }}
+            cd /var/www/html/spotted-eurostar-sleeper/
             
             echo "📥 Récupération des dernières modifications Git..."
             git fetch origin main
