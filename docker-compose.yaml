@@ -1,7 +1,8 @@
 services:
-  eurostar-sleeper-radar:
+  eurostar-sleeper-api:
+    image: eurostar-sleeper-api
     build: .
-    container_name: eurostar-sleeper-radar
+    container_name: eurostar-sleeper-api
     restart: unless-stopped
     volumes:
       - .:/app
