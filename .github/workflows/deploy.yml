@@ -1,0 +1,37 @@
+name: Deploy Eurostar Sleeper API to Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            echo "🚀 Déploiement en cours..."
+            cd ${{ secrets.DEPLOY_PATH }}
+            
+            echo "📥 Récupération des dernières modifications Git..."
+            git fetch origin main
+            git reset --hard origin/main
+            
+            echo "🐳 Reconstruction des images et redémarrage des conteneurs..."
+            docker compose down eurostar-sleeper-radar || true
+            docker compose build --no-cache
+            docker compose up -d
+            
+            echo "🧹 Nettoyage des images orphelines..."
+            docker image prune -f
+            
+            echo "✅ Déploiement terminé avec succès !"
