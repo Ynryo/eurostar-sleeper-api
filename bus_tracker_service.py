@@ -91,7 +91,7 @@ def extract_raw_journey_id(journey_id: str) -> str:
 
 NETWORKS_METADATA = [
     {
-        "id": 101,
+        "id": 10001,
         "ref": "FR:Network:Eurostar",
         "networkRef": "FR:Network:Eurostar",
         "name": "Eurostar",
@@ -108,7 +108,7 @@ NETWORKS_METADATA = [
         "embedMapCenter": [2.355, 48.88, 7]
     },
     {
-        "id": 102,
+        "id": 10002,
         "ref": "BE:Network:EuropeanSleeper",
         "networkRef": "BE:Network:EuropeanSleeper",
         "name": "European Sleeper",
