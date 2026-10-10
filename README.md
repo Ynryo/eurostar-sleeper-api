@@ -2,7 +2,7 @@
 
 [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
 [![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](requirements.txt)
-[![GTFS-RT](https://img.shields.io/badge/GTFS--RT-Live%20Feed-10B981)](#-sources-de-donn%C3%A9es)
+[![GTFS-RT](https://img.shields.io/badge/GTFS--RT-Live%20Feed-10B981)](#-sources-de-données)
 [![BRouter](https://img.shields.io/badge/OSM-BRouter%20Rail-F59E0B)](#-routage-ferroviaire-physique-brouter)
 
 > **API et Radar temps réel multi-réseaux** pour les trains à grande vitesse **Eurostar** (Grande-Bretagne, France, Belgique, Pays-Bas, Allemagne) et les trains de nuit trans-européens **European Sleeper** (Bruxelles, Amsterdam, Berlin, Prague).
@@ -39,6 +39,7 @@ eurostar-sleeper-api/
 ├── config.py                 # Configuration centrale (ports, fuseaux horaires, URLs de flux)
 ├── gtfs.py                   # Serveur FastAPI et distribution des endpoints temps réel NeTEx
 ├── gtfs_service.py           # Ingestion GTFS/GTFS-RT, statuts radar et interpolation
+├── bus_tracker_service.py    # Contrôleur Bus-Tracker / NeTEx compatible Spotted
 ├── rail_routing_service.py   # Client BRouter ferroviaire, simplification RDP et cache
 ├── rail_shapes_cache.json    # Cache local des géométries de voies calculées
 ├── regenerate_shapes.py      # Outil CLI de maintenance et régénération des tracés BRouter
@@ -47,7 +48,7 @@ eurostar-sleeper-api/
 │   ├── style.css
 │   └── app.js
 ├── Dockerfile                # Image conteneur optimisée (Python 3.12-slim)
-├── docker-compose.yml        # Orchestration locale prête à l'emploi
+├── docker-compose.yaml       # Orchestration locale prête à l'emploi
 ├── requirements.txt          # Dépendances Python minimales
 └── .gitignore
 ```
@@ -59,7 +60,7 @@ eurostar-sleeper-api/
 La documentation interactive **OpenAPI / Swagger** est accessible directement sur `http://localhost:8080/docs`.
 
 ### 1. `GET /api/networks`
-Retourne la liste des réseaux gérés (Eurostar : 101, European Sleeper : 102) selon le standard européen NeTEx et Bus-Tracker.
+Retourne la liste des réseaux gérés (Eurostar : 10001, European Sleeper : 10002) selon le standard européen NeTEx et Bus-Tracker.
 
 ### 2. `GET /api/networks/{network_id}?withDetails=true`
 Retourne la fiche détaillée d'un réseau enrichie de ses lignes actives (`lines`) pour compatibilité native avec `BusTrackerClient` et `spotted-api`.
@@ -72,7 +73,7 @@ Flux temps réel allégé pour la cartographie, avec filtrage optionnel par boun
   {
     "items": [
       {
-        "id": "FR:Eurostar:VehicleJourney:9028-1006",
+        "id": "FR:Network:Eurostar::VehicleJourney:9028-1006",
         "lineNumber": "9028",
         "vehicleNumber": "9028",
         "color": "#FFFFFF",
