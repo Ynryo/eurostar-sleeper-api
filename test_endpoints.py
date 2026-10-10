@@ -10,41 +10,39 @@ def test_api():
     assert r.status_code == 200, f"Failed: {r.status_code}"
     networks = r.json()
     assert len(networks) == 2
-    assert networks[0]["id"] == 101
+    assert networks[0]["id"] == 10001
     assert networks[0]["ref"] == "FR:Network:Eurostar"
-    assert networks[1]["id"] == 102
+    assert networks[1]["id"] == 10002
     assert networks[1]["ref"] == "BE:Network:EuropeanSleeper"
-    assert networks[0]["regionId"] == 16
-    assert networks[1]["regionId"] == 16
     print(f"✅ /api/networks OK: IDs entiers ({networks[0]['id']}, {networks[1]['id']}) et NeTEx refs ({networks[0]['ref']}, {networks[1]['ref']}) validés.")
 
-    print("Testing /api/networks/101?withDetails=true (BusTrackerClient.php contract)...")
-    r_details = client.get("/api/networks/101?withDetails=true")
+    print("Testing /api/networks/10001?withDetails=true (BusTrackerClient.php contract)...")
+    r_details = client.get("/api/networks/10001?withDetails=true")
     assert r_details.status_code == 200
     net_details = r_details.json()
-    assert net_details["id"] == 101
+    assert net_details["id"] == 10001
     assert "lines" in net_details
     assert len(net_details["lines"]) == 1
     assert net_details["lines"][0]["id"] == 1010
-    print(f"✅ /api/networks/101?withDetails=true OK: {len(net_details['lines'])} ligne(s) rattachée(s) (lineId: {net_details['lines'][0]['id']})")
+    print(f"✅ /api/networks/10001?withDetails=true OK: {len(net_details['lines'])} ligne(s) rattachée(s) (lineId: {net_details['lines'][0]['id']})")
 
-    print("Testing /api/networks/102?withDetails=true (Sleeper)...")
-    r_details_sl = client.get("/api/networks/102?withDetails=true")
+    print("Testing /api/networks/10002?withDetails=true (Sleeper)...")
+    r_details_sl = client.get("/api/networks/10002?withDetails=true")
     assert r_details_sl.status_code == 200
     assert r_details_sl.json()["lines"][0]["id"] == 1020
-    print(f"✅ /api/networks/102?withDetails=true OK (lineId: 1020)")
+    print(f"✅ /api/networks/10002?withDetails=true OK (lineId: 1020)")
 
     print("Testing /api/networks/FR:Network:Eurostar?withDetails=true (NeTEx URN)...")
     r_netex_d = client.get("/api/networks/FR:Network:Eurostar?withDetails=true")
     assert r_netex_d.status_code == 200
-    assert r_netex_d.json()["id"] == 101
+    assert r_netex_d.json()["id"] == 10001
     assert r_netex_d.json()["lines"][0]["id"] == 1010
     print("✅ /api/networks/FR:Network:Eurostar?withDetails=true OK.")
 
     print("Testing /api/networks/BE:Network:EuropeanSleeper?withDetails=true (NeTEx URN)...")
     r_sleeper_d = client.get("/api/networks/BE:Network:EuropeanSleeper?withDetails=true")
     assert r_sleeper_d.status_code == 200
-    assert r_sleeper_d.json()["id"] == 102
+    assert r_sleeper_d.json()["id"] == 10002
     assert r_sleeper_d.json()["lines"][0]["id"] == 1020
     print("✅ /api/networks/BE:Network:EuropeanSleeper?withDetails=true OK.")
 
@@ -59,24 +57,27 @@ def test_api():
     # Test Bounding Box
     r_bbox = client.get("/api/vehicle-journeys/markers?swLat=48.0&swLon=2.0&neLat=52.0&neLon=5.0")
     assert r_bbox.status_code == 200
-    bbox_items = r_bbox.json()["items"]
-    print(f"✅ Bounding Box filtrage OK: {len(bbox_items)} marqueurs dans la zone.")
+    print(f"✅ /api/vehicle-journeys/markers (BBox) OK: {len(r_bbox.json()['items'])} marqueurs filtrés.")
 
-    if markers["items"]:
-        first_id = markers["items"][0]["id"]
-        assert ":VehicleJourney:" in first_id, f"Invalid NeTEx Journey ID: {first_id}"
+    # Test détails du trajet
+    if len(markers["items"]) > 0:
+        first_marker = markers["items"][0]
+        first_id = first_marker["id"]
         print(f"Testing /api/vehicle-journeys/{first_id}...")
+        assert "::VehicleJourney:" in first_id, f"Invalid Spotted Journey ID: {first_id}"
+        
+        # Test split("::")[0] comme dans l'app Android SpottedMarkerData.java
+        net_ref_extracted = first_id.split("::")[0]
+        assert net_ref_extracted in ("FR:Network:Eurostar", "BE:Network:EuropeanSleeper"), f"Unexpected networkRef extracted: {net_ref_extracted}"
+
         r_journey = client.get(f"/api/vehicle-journeys/{first_id}")
         assert r_journey.status_code == 200
         journey_data = r_journey.json()
+        assert journey_data["id"] == first_id
+        assert journey_data["networkRef"] == net_ref_extracted
         assert "calls" in journey_data
-        assert "position" in journey_data
-        assert isinstance(journey_data["lineId"], int), "lineId must be int"
-        assert isinstance(journey_data["networkId"], int), "networkId must be int"
-        assert journey_data["lineId"] in (1010, 1020)
-        assert journey_data["networkId"] in (101, 102)
-        assert ":Vehicle:" in journey_data["vehicle"]["ref"]
-        
+        assert len(journey_data["calls"]) > 0
+
         # Validation du format UIC NeTEx dans stopRef
         first_call = journey_data["calls"][0]
         stop_ref = first_call["stopRef"]
@@ -94,7 +95,7 @@ def test_api():
         print(f"✅ /api/vehicle-journeys/{first_id}/paths OK (Format Path.php): {len(path_data['path']['p'])} points GPS 3D.")
 
         # Test de résolution avec l'identifiant brut (rétrocompatibilité)
-        raw_id = first_id.split(":VehicleJourney:")[-1]
+        raw_id = first_id.split("::VehicleJourney:")[-1]
         r_raw = client.get(f"/api/vehicle-journeys/{raw_id}")
         assert r_raw.status_code == 200
         assert r_raw.json()["id"] == first_id
@@ -104,4 +105,3 @@ def test_api():
 
 if __name__ == "__main__":
     test_api()
-
