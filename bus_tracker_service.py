@@ -74,17 +74,24 @@ def get_netex_stop_ref(stop: Dict[str, Any], is_sleeper: bool) -> str:
     return f"{country}:StopPoint:{stop_uic}"
 
 def format_journey_id(raw_id: Any, is_sleeper: bool) -> str:
-    """Convertit un identifiant de course brut en identifiant NeTEx ServiceJourney."""
+    """Convertit un identifiant de course brut en identifiant Spotted / Bus-Tracker ({networkRef}::VehicleJourney:{id})."""
     str_id = str(raw_id)
-    if str_id.startswith("FR:Eurostar:VehicleJourney:") or str_id.startswith("BE:Sleeper:VehicleJourney:"):
+    if str_id.startswith("FR:Network:Eurostar::VehicleJourney:") or str_id.startswith("BE:Network:EuropeanSleeper::VehicleJourney:"):
         return str_id
+    if str_id.startswith("FR:Eurostar:VehicleJourney:"):
+        str_id = str_id.replace("FR:Eurostar:VehicleJourney:", "")
+    elif str_id.startswith("BE:Sleeper:VehicleJourney:"):
+        str_id = str_id.replace("BE:Sleeper:VehicleJourney:", "")
+
     if is_sleeper:
-        return f"BE:Sleeper:VehicleJourney:{str_id}"
+        return f"BE:Network:EuropeanSleeper::VehicleJourney:{str_id}"
     else:
-        return f"FR:Eurostar:VehicleJourney:{str_id}"
+        return f"FR:Network:Eurostar::VehicleJourney:{str_id}"
 
 def extract_raw_journey_id(journey_id: str) -> str:
-    """Extrait l'identifiant brut pour recherche interne si un ID NeTEx est fourni."""
+    """Extrait l'identifiant brut pour recherche interne si un ID NeTEx / Spotted est fourni."""
+    if "::VehicleJourney:" in journey_id:
+        return journey_id.split("::VehicleJourney:")[-1]
     if ":VehicleJourney:" in journey_id:
         return journey_id.split(":VehicleJourney:")[-1]
     return journey_id
@@ -93,10 +100,8 @@ NETWORKS_METADATA = [
     {
         "id": 10001,
         "ref": "FR:Network:Eurostar",
-        "networkRef": "FR:Network:Eurostar",
         "name": "Eurostar",
         "authority": "Eurostar Group",
-        "authorityRef": "FR:Authority:EurostarGroup",
         "countryCode": "FR",
         "timezone": "Europe/Paris",
         "logoHref": "https://upload.wikimedia.org/wikipedia/commons/3/33/Eurostar_logo_%282023%29.svg",
@@ -104,16 +109,14 @@ NETWORKS_METADATA = [
         "color": "116BFE",
         "textColor": "000000",
         "hasVehiclesFeature": True,
-        "regionId": 16,
+        "regionId": 13,
         "embedMapCenter": [2.355, 48.88, 7]
     },
     {
         "id": 10002,
         "ref": "BE:Network:EuropeanSleeper",
-        "networkRef": "BE:Network:EuropeanSleeper",
         "name": "European Sleeper",
         "authority": "European Sleeper BV",
-        "authorityRef": "BE:Authority:EuropeanSleeperBV",
         "countryCode": "BE",
         "timezone": "Europe/Brussels",
         "logoHref": "https://upload.wikimedia.org/wikipedia/commons/3/3d/European_Sleeper_Logo.svg",
@@ -121,7 +124,7 @@ NETWORKS_METADATA = [
         "color": "FF3602",
         "textColor": "FFFFFF",
         "hasVehiclesFeature": True,
-        "regionId": 16,
+        "regionId": 13,
         "embedMapCenter": [4.35, 50.85, 6]
     }
 ]
@@ -240,7 +243,7 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
         return None
 
     is_sleeper = train.get('network') == 'european_sleeper'
-    net_id = 102 if is_sleeper else 101
+    net_id = 10002 if is_sleeper else 10001
     net_ref = "BE:Network:EuropeanSleeper" if is_sleeper else "FR:Network:Eurostar"
     line_id = 1020 if is_sleeper else 1010
     line_ref = "BE:Line:EuropeanSleeper" if is_sleeper else "FR:Line:Eurostar"
@@ -287,7 +290,7 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
 
     now_iso = datetime.now(timezone.utc).isoformat()
     shape_id = train.get('shape_id')
-    path_ref = f"{'BE:Sleeper' if is_sleeper else 'FR:Eurostar'}:Route:{shape_id}" if shape_id else None
+    path_ref = f"{net_ref}::Route:{shape_id}" if shape_id else None
 
     return {
         "id": journey_netex_id,
@@ -311,7 +314,7 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
         "journeyRef": journey_netex_id,
         "vehicle": {
             "number": str(train.get('num', '')),
-            "ref": f"{'BE:Sleeper' if is_sleeper else 'FR:Eurostar'}:Vehicle:{train.get('num', '')}"
+            "ref": f"{net_ref}::Vehicle:{train.get('num', '')}"
         },
         "serviceDate": datetime.now(EUROSTAR_TZ).strftime("%Y-%m-%d"),
         "updatedAt": now_iso
