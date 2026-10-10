@@ -1,8 +1,7 @@
 services:
   eurostar-sleeper-api:
-    image: eurostar-sleeper-api
-    build: .
     container_name: eurostar-sleeper-api
+    build: .
     restart: unless-stopped
     volumes:
       - .:/app
