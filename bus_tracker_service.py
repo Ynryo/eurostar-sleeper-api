@@ -50,7 +50,7 @@ def format_iso_time(time_str: Optional[str], tz_offset_hours: int = 2) -> Option
 def get_netex_stop_ref(stop: Dict[str, Any], is_sleeper: bool) -> str:
     """Génère un identifiant d'arrêt normalisé NeTEx (Code pays UIC + matricule)."""
     stop_uic = str(stop.get('stop_code') or stop.get('stop_id') or '')
-    
+
     # Détection du code pays UIC selon la fiche UIC 920-14
     if stop_uic.startswith("87"):
         country = "FR"
@@ -70,7 +70,7 @@ def get_netex_stop_ref(stop: Dict[str, Any], is_sleeper: bool) -> str:
         country = "AT"
     else:
         country = "BE" if is_sleeper else "FR"
-        
+
     return f"{country}:StopPoint:{stop_uic}"
 
 def format_journey_id(raw_id: Any, is_sleeper: bool) -> str:
@@ -135,9 +135,9 @@ def get_networks_list() -> List[Dict[str, Any]]:
 def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
     s_id = str(network_id).strip()
     net = next((
-        n for n in NETWORKS_METADATA 
-        if str(n["id"]) == s_id 
-        or n["ref"] == s_id 
+        n for n in NETWORKS_METADATA
+        if str(n["id"]) == s_id
+        or n["ref"] == s_id
         or n.get("networkRef") == s_id
     ), None)
 
@@ -272,6 +272,8 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
         else:
             call_status = "SCHEDULED"
 
+        platform = s.get('platform') or s.get('track') or None
+
         calls.append({
             "aimedTime": aimed_dep or aimed_arr,
             "expectedTime": expected_dep or expected_arr,
@@ -283,7 +285,7 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
             "distanceTraveled": round(cum_distance, 1),
             "latitude": s.get('lat', 0.0),
             "longitude": s.get('lon', 0.0),
-            "platformName": s.get('track') or None,
+            "platformName": platform if platform else None,
             "callStatus": call_status,
             "flags": ["NO_PICKUP"] if idx == len(stops) - 1 else ([] if idx > 0 else ["NO_DROP_OFF"])
         })

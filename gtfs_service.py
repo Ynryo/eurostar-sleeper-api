@@ -41,12 +41,27 @@ def get_preferred_text(translated_string):
 def format_station_label(stop_id):
     if not stop_id:
         return "Gare non renseignée"
+    if stop_id.startswith('roissy_airport_cdg_2'):
+        return STATION_NAMES.get(stop_id, "Aéroport CDG 2 TGV")
     m = re.match(r'^(.*?)(?:_(\d+[a-zA-Z]?))?$', stop_id)
     if m:
-        base, track = m.group(1), m.group(2)
-        name = STATION_NAMES.get(base, base.replace('_', ' ').title())
-        return f"{name} (Voie {track})" if track else name
+        base = m.group(1)
+        return STATION_NAMES.get(base, base.replace('_', ' ').title())
     return STATION_NAMES.get(stop_id, stop_id.replace('_', ' ').title())
+
+def extract_platform_code(assigned_stop_id, static_stop_id, stops):
+    """Extrait le code/numéro de voie (ex: '5', '10A', 'B') pour un arrêt."""
+    for sid in (assigned_stop_id, static_stop_id):
+        if not sid:
+            continue
+        p = stops.get(sid, {}).get('platform')
+        if p:
+            return str(p).strip()
+        if not sid.startswith('roissy_airport_cdg'):
+            m = re.search(r'_(\d+[a-zA-Z]?)$', sid)
+            if m:
+                return m.group(1).upper()
+    return None
 
 def format_delay(delay_seconds):
     if delay_seconds <= 0:
@@ -391,6 +406,7 @@ def build_eurostar_data():
 
             stop_coord = stops.get(s['stop_id'], {'lat': 0.0, 'lon': 0.0, 'name': s['stop_id']})
             stop_display_name = format_station_label(assigned_track if assigned_track else s['stop_id'])
+            platform_code = extract_platform_code(assigned_track, s['stop_id'], stops)
 
             enriched_stops.append({
                 'seq': seq,
@@ -409,7 +425,8 @@ def build_eurostar_data():
                 'est_dep_sec': est_dep_sec,
                 'delay_arr': arr_delay,
                 'delay_dep': dep_delay,
-                'track': assigned_track,
+                'track': platform_code or '',
+                'platform': platform_code or '',
                 'is_skipped': is_skipped
             })
 
