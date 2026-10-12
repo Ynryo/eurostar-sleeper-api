@@ -3,14 +3,14 @@ import re
 import io
 import csv
 import time
-import math
 import html
 import zipfile
 import urllib.request
 from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional
 from google.transit import gtfs_realtime_pb2
 
-from config import (
+from app.core.config import (
     EUROSTAR_TZ,
     EUROPEAN_SLEEPER_TZ,
     EUROSTAR_RT_URL,
@@ -20,15 +20,23 @@ from config import (
     EUROPEAN_SLEEPER_CACHE_FILE,
     STATION_NAMES
 )
-from rail_routing_service import rail_router
+from app.services.rail_router import rail_router
+from app.utils.geo import (
+    haversine_dist,
+    calculate_bearing,
+    interpolate_along_track,
+    extract_sub_shape
+)
 
-def clean_html(text):
+
+def clean_html(text: str) -> str:
     if not text:
         return ""
     text = re.sub(r'<[^>]+>', ' ', text)
     return ' '.join(html.unescape(text).split())
 
-def get_preferred_text(translated_string):
+
+def get_preferred_text(translated_string) -> str:
     if not translated_string or not translated_string.translation:
         return ""
     translations = {t.language: t.text for t in translated_string.translation}
@@ -38,7 +46,8 @@ def get_preferred_text(translated_string):
         return translations['en']
     return translated_string.translation[0].text
 
-def format_station_label(stop_id):
+
+def format_station_label(stop_id: str) -> str:
     if not stop_id:
         return "Gare non renseignée"
     if stop_id.startswith('roissy_airport_cdg_2'):
@@ -49,7 +58,8 @@ def format_station_label(stop_id):
         return STATION_NAMES.get(base, base.replace('_', ' ').title())
     return STATION_NAMES.get(stop_id, stop_id.replace('_', ' ').title())
 
-def extract_platform_code(assigned_stop_id, static_stop_id, stops):
+
+def extract_platform_code(assigned_stop_id: Optional[str], static_stop_id: Optional[str], stops: Dict[str, Any]) -> Optional[str]:
     """Extrait le code/numéro de voie (ex: '5', '10A', 'B') pour un arrêt."""
     for sid in (assigned_stop_id, static_stop_id):
         if not sid:
@@ -63,74 +73,21 @@ def extract_platform_code(assigned_stop_id, static_stop_id, stops):
                 return m.group(1).upper()
     return None
 
-def format_delay(delay_seconds):
+
+def format_delay(delay_seconds: int) -> str:
     if delay_seconds <= 0:
         return "À l'heure"
     mins = delay_seconds // 60
     secs = delay_seconds % 60
     return f"+{mins} min" if mins > 0 else f"+{secs}s"
 
-def calculate_bearing(lat1, lon1, lat2, lon2):
-    dlon = math.radians(lon2 - lon1)
-    y = math.sin(dlon) * math.cos(math.radians(lat2))
-    x = math.cos(math.radians(lat1)) * math.sin(math.radians(lat2)) - \
-        math.sin(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.cos(dlon)
-    bearing = math.degrees(math.atan2(y, x))
-    return (bearing + 360) % 360
 
-def haversine_dist(p1, p2):
-    lat1, lon1 = math.radians(p1[0]), math.radians(p1[1])
-    lat2, lon2 = math.radians(p2[0]), math.radians(p2[1])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    a = math.sin(dlat/2)**2 + math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2
-    return 6371000 * 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-
-def interpolate_along_track(pts, ratio):
-    """Calcule la position et l'orientation exacte le long d'une polyline ferroviaire."""
-    if not pts:
-        return [0.0, 0.0], 0.0
-    if len(pts) == 1:
-        return pts[0], 0.0
-    ratio = min(1.0, max(0.0, ratio))
-    dists = [haversine_dist(pts[i], pts[i+1]) for i in range(len(pts)-1)]
-    total_dist = sum(dists)
-    if total_dist == 0:
-        return pts[0], 0.0
-
-    target = ratio * total_dist
-    accum = 0.0
-    for i, d in enumerate(dists):
-        if accum + d >= target:
-            seg_r = (target - accum) / d if d > 0 else 0
-            lat = pts[i][0] + (pts[i+1][0] - pts[i][0]) * seg_r
-            lon = pts[i][1] + (pts[i+1][1] - pts[i][1]) * seg_r
-            b = calculate_bearing(pts[i][0], pts[i][1], pts[i+1][0], pts[i+1][1])
-            return [round(lat, 6), round(lon, 6)], round(b, 1)
-        accum += d
-
-    p_last = pts[-1]
-    p_prev = pts[-2]
-    return p_last, round(calculate_bearing(p_prev[0], p_prev[1], p_last[0], p_last[1]), 1)
-
-def extract_sub_shape(full_shape, cur_lat, cur_lon, nxt_lat, nxt_lon):
-    """Extrait le tronçon ferroviaire entre deux gares consécutives le long de la shape complète."""
-    if not full_shape or len(full_shape) < 2:
-        return None
-    i_start = min(range(len(full_shape)), key=lambda i: haversine_dist(full_shape[i], (cur_lat, cur_lon)))
-    i_end = min(range(len(full_shape)), key=lambda i: haversine_dist(full_shape[i], (nxt_lat, nxt_lon)))
-    if i_start == i_end:
-        return None
-    if i_start < i_end:
-        return full_shape[i_start : i_end + 1]
-    else:
-        return list(reversed(full_shape[i_end : i_start + 1]))
-
-def parse_time_sec(hms):
+def parse_time_sec(hms: str) -> int:
     parts = [int(p) for p in hms.split(':')]
     return parts[0] * 3600 + parts[1] * 60 + parts[2]
 
-def get_static_gtfs():
+
+def get_static_gtfs() -> zipfile.ZipFile:
     """Télécharge ou utilise le cache du GTFS statique Eurostar."""
     need_download = True
     if os.path.exists(STATIC_CACHE_FILE):
@@ -151,7 +108,8 @@ def get_static_gtfs():
     with open(STATIC_CACHE_FILE, 'rb') as f:
         return zipfile.ZipFile(io.BytesIO(f.read()))
 
-def get_european_sleeper_gtfs():
+
+def get_european_sleeper_gtfs() -> zipfile.ZipFile:
     """Télécharge ou utilise le cache du GTFS European Sleeper."""
     need_download = True
     if os.path.exists(EUROPEAN_SLEEPER_CACHE_FILE):
@@ -172,11 +130,13 @@ def get_european_sleeper_gtfs():
     with open(EUROPEAN_SLEEPER_CACHE_FILE, 'rb') as f:
         return zipfile.ZipFile(io.BytesIO(f.read()))
 
+
 _eurostar_static_cache = None
 _eurostar_static_cache_time = 0
 _eurostar_static_date = None
 
-def get_eurostar_static_data():
+
+def get_eurostar_static_data() -> Dict[str, Any]:
     """Charge et indexe en mémoire les données statiques Eurostar (Cache long 24h / CacheTtl::LONG)."""
     global _eurostar_static_cache, _eurostar_static_cache_time, _eurostar_static_date
     now = datetime.now(EUROSTAR_TZ)
@@ -299,7 +259,7 @@ def get_eurostar_static_data():
                 })
 
     for tid in trip_stops:
-        trip_stops[tid].sort(key=lambda x: x['seq'])
+        trip_stops[tid].sort(key=lambda x: x['seq'])\
 
     _eurostar_static_cache = {
         'stops': stops,
@@ -312,7 +272,8 @@ def get_eurostar_static_data():
     _eurostar_static_date = today_suffix
     return _eurostar_static_cache
 
-def build_eurostar_data():
+
+def build_eurostar_data() -> Dict[str, Any]:
     """Analyse le réseau Eurostar (GTFS statique indexé en mémoire + GTFS-RT en direct)."""
     static_data = get_eurostar_static_data()
     stops = static_data['stops']
@@ -499,7 +460,8 @@ def build_eurostar_data():
                         progress = float(i) / (len(active_stops) - 1)
                         break
                     elif cur_s['est_dep_sec'] < now_sec < nxt_s['est_arr_sec']:
-                        seg_duration = max(1, nxt_s['est_arr_sec'] - cur_s['est_dep_sec'])
+                        seg_duration = max(1, nxt_s['est_arr_sec'] - cur_s['est_dep_sec'])\
+
                         seg_elapsed = now_sec - cur_s['est_dep_sec']
                         seg_ratio = min(1.0, max(0.0, seg_elapsed / seg_duration))
 
@@ -545,6 +507,7 @@ def build_eurostar_data():
             'shape_id': assigned_shape_id,
             'network': 'eurostar',
             'operator_name': 'Eurostar',
+            'service_date': now.strftime('%Y-%m-%d'),
             'time_to_dep_sec': time_to_dep_sec,
             'is_departing_soon': is_departing_soon
         })
@@ -555,11 +518,13 @@ def build_eurostar_data():
         'stations': list(stations_map.values())
     }
 
+
 _sleeper_static_cache = None
 _sleeper_static_cache_time = 0
 _sleeper_static_date = None
 
-def get_sleeper_static_data():
+
+def get_sleeper_static_data() -> Dict[str, Any]:
     """Charge et indexe en mémoire les données statiques European Sleeper (Cache long 24h / CacheTtl::LONG)."""
     global _sleeper_static_cache, _sleeper_static_cache_time, _sleeper_static_date
     now = datetime.now(EUROPEAN_SLEEPER_TZ)
@@ -588,7 +553,8 @@ def get_sleeper_static_data():
                 'name': r['stop_name'],
                 'lat': lat,
                 'lon': lon,
-                'stop_code': r.get('stop_code', '')
+                'stop_code': sid,
+                'platform': r.get('platform_code', '')
             }
             stations_map[sid] = {
                 'id': f"es_{sid}",
@@ -598,20 +564,50 @@ def get_sleeper_static_data():
                 'network': 'european_sleeper'
             }
 
-    # 2. Calendar dates
+    # 2. Routes
+    routes = {}
+    if 'routes.txt' in zf.namelist():
+        with zf.open('routes.txt') as f:
+            for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8')):
+                routes[r['route_id']] = r
+
+    # 3. Shapes (tracés OSM haute résolution inclus directement)
+    shapes_raw = {}
+    if 'shapes.txt' in zf.namelist():
+        with zf.open('shapes.txt') as f:
+            for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8')):
+                shid = r['shape_id']
+                if shid not in shapes_raw:
+                    shapes_raw[shid] = []
+                shapes_raw[shid].append([float(r['shape_pt_lat']), float(r['shape_pt_lon'])])
+
+    shapes_dict = {}
+    for shid, pts in shapes_raw.items():
+        sampled = pts[::2]
+        if sampled[-1] != pts[-1]:
+            sampled.append(pts[-1])
+        shapes_dict[shid] = sampled
+
+    # 4. Calendar dates
     calendar_dates = {}
     with zf.open('calendar_dates.txt') as f:
         for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8')):
-            if r['exception_type'] == '1':
+            if r.get('exception_type') == '1':
                 d = r['date']
                 calendar_dates.setdefault(d, set()).add(r['service_id'])
 
-    # 3. Trips & Stop times
+    # 5. Trips
     trips = {}
+    service_to_trips = {}
     with zf.open('trips.txt') as f:
         for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8')):
-            trips[r['trip_id']] = r
+            tid = r['trip_id']
+            route_info = routes.get(r.get('route_id'), {})
+            r['trip_short_name'] = r.get('trip_short_name') or route_info.get('route_short_name') or r.get('route_id', 'ES')
+            trips[tid] = r
+            service_to_trips.setdefault(r['service_id'], []).append(r)
 
+    # 6. Stop times
     trip_stops = {}
     with zf.open('stop_times.txt') as f:
         for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8')):
@@ -628,39 +624,42 @@ def get_sleeper_static_data():
     for tid in trip_stops:
         trip_stops[tid].sort(key=lambda x: x['seq'])
 
-    # Date de référence
     yesterday_str = (now - timedelta(days=1)).strftime('%Y%m%d')
 
     # Gestion des jours de service actifs (départ hier soir et départ ce soir)
-    active_service_days = []
+    active_trips_candidates = []
     if yesterday_str in calendar_dates:
-        for s in calendar_dates[yesterday_str]:
-            active_service_days.append((s, -1))
+        for sid in calendar_dates[yesterday_str]:
+            for t in service_to_trips.get(sid, []):
+                active_trips_candidates.append((t['trip_id'], -1, yesterday_str))
     if today_str in calendar_dates:
-        for s in calendar_dates[today_str]:
-            active_service_days.append((s, 0))
+        for sid in calendar_dates[today_str]:
+            for t in service_to_trips.get(sid, []):
+                active_trips_candidates.append((t['trip_id'], 0, today_str))
 
-    if not active_service_days and calendar_dates:
+    if not active_trips_candidates and calendar_dates:
         all_sorted = sorted(calendar_dates.keys())
         sim_date = all_sorted[0]
-        for s in calendar_dates[sim_date]:
-            active_service_days.append((s, 0))
+        for sid in calendar_dates[sim_date]:
+            for t in service_to_trips.get(sid, []):
+                active_trips_candidates.append((t['trip_id'], 0, sim_date))
 
-    shapes_dict = {}
     active_trips_data = []
 
-    for sid, day_offset in active_service_days:
-        t_meta = trips.get(sid)
+    for tid, day_offset, s_date_raw in active_trips_candidates:
+        t_meta = trips.get(tid)
         if not t_meta:
             continue
-        s_list = trip_stops.get(sid, [])
+        s_list = trip_stops.get(tid, [])
         if not s_list:
             continue
 
+        service_date = f"{s_date_raw[:4]}-{s_date_raw[4:6]}-{s_date_raw[6:8]}"
         first_stop = s_list[0]
         last_stop = s_list[-1]
         origin_name = stops[first_stop['stop_id']]['name']
         dest_name = stops[last_stop['stop_id']]['name']
+        t_meta['trip_headsign'] = t_meta.get('trip_headsign') or dest_name
 
         enriched_stops = []
         for s in s_list:
@@ -671,6 +670,8 @@ def get_sleeper_static_data():
             dm = (s['dep_sec'] % 3600) // 60
             next_day_arr = ' (+1j)' if s['arr_sec'] >= 86400 else ''
             next_day_dep = ' (+1j)' if s['dep_sec'] >= 86400 else ''
+
+            platform_code = extract_platform_code(None, s['stop_id'], stops)
 
             enriched_stops.append({
                 'seq': s['seq'],
@@ -689,19 +690,22 @@ def get_sleeper_static_data():
                 'est_dep_sec': s['dep_sec'],
                 'delay_arr': 0,
                 'delay_dep': 0,
-                'track': '',
+                'track': platform_code or '',
+                'platform': platform_code or '',
                 'is_skipped': False
             })
 
-        # Génération / récupération du tracé ferroviaire réel via OpenStreetMap
-        stops_coords = [[s['lat'], s['lon']] for s in enriched_stops]
-        full_rail_pts = rail_router.get_full_route(stops_coords)
-        shape_id = f"SHAPE_ES_{sid}"
-        shapes_dict[shape_id] = full_rail_pts
+        shape_id = t_meta.get('shape_id')
+        if not shape_id or shape_id not in shapes_dict:
+            stops_coords = [[s['lat'], s['lon']] for s in enriched_stops]
+            full_rail_pts = rail_router.get_full_route(stops_coords)
+            shape_id = f"SHAPE_ES_{tid}"
+            shapes_dict[shape_id] = full_rail_pts
 
         active_trips_data.append({
-            'sid': sid,
+            'sid': tid,
             'day_offset': day_offset,
+            'service_date': service_date,
             't_meta': t_meta,
             's_list': s_list,
             'first_stop': first_stop,
@@ -722,7 +726,8 @@ def get_sleeper_static_data():
     _sleeper_static_date = today_str
     return _sleeper_static_cache
 
-def build_european_sleeper_data():
+
+def build_european_sleeper_data() -> Dict[str, Any]:
     """Analyse le réseau European Sleeper (données statiques indexées + simulation horaire)."""
     static_data = get_sleeper_static_data()
     stops = static_data['stops']
@@ -737,6 +742,7 @@ def build_european_sleeper_data():
     for item in active_trips:
         sid = item['sid']
         day_offset = item['day_offset']
+        service_date = item.get('service_date', now.strftime('%Y-%m-%d'))
         t_meta = item['t_meta']
         s_list = item['s_list']
         first_stop = item['first_stop']
@@ -746,7 +752,6 @@ def build_european_sleeper_data():
         enriched_stops = item['enriched_stops']
         shape_id = item['shape_id']
 
-        # Référence temporelle : si départ hier, l'heure actuelle équivaut à (now_sec + 86400)
         t_ref = now_sec - (day_offset * 86400)
 
         time_to_dep_sec = first_stop['dep_sec'] - t_ref
@@ -790,21 +795,17 @@ def build_european_sleeper_data():
                     c_st = stops[cur_s['stop_id']]
                     n_st = stops[nxt_s['stop_id']]
 
-                    # Positionnement exact sur la voie ferrée réelle
-                    seg = rail_router.get_rail_segment(c_st['lat'], c_st['lon'], n_st['lat'], n_st['lon'])
-                    if len(seg) >= 2:
-                        idx = min(len(seg) - 1, max(0, int(ratio * (len(seg) - 1))))
-                        pos = seg[idx]
-                        nxt_idx = min(len(seg) - 1, idx + 1)
-                        if nxt_idx != idx:
-                            bearing = calculate_bearing(pos[0], pos[1], seg[nxt_idx][0], seg[nxt_idx][1])
-                        else:
-                            bearing = calculate_bearing(c_st['lat'], c_st['lon'], n_st['lat'], n_st['lon'])
+                    full_shape = shapes_dict.get(shape_id)
+                    track_sub = extract_sub_shape(full_shape, c_st['lat'], c_st['lon'], n_st['lat'], n_st['lon'])
+                    if not track_sub or len(track_sub) < 2:
+                        track_sub = rail_router.get_rail_segment(c_st['lat'], c_st['lon'], n_st['lat'], n_st['lon'])
+
+                    if track_sub and len(track_sub) >= 2:
+                        pos, bearing = interpolate_along_track(track_sub, ratio)
                     else:
-                        pos = [
-                            round(c_st['lat'] + (n_st['lat'] - c_st['lat']) * ratio, 6),
-                            round(c_st['lon'] + (n_st['lon'] - c_st['lon']) * ratio, 6)
-                        ]
+                        interp_lat = c_st['lat'] + (n_st['lat'] - c_st['lat']) * ratio
+                        interp_lon = c_st['lon'] + (n_st['lon'] - c_st['lon']) * ratio
+                        pos = [round(interp_lat, 6), round(interp_lon, 6)]
                         bearing = calculate_bearing(c_st['lat'], c_st['lon'], n_st['lat'], n_st['lon'])
 
                     progress = (i + ratio) / (len(s_list) - 1)
@@ -815,8 +816,8 @@ def build_european_sleeper_data():
         train_id = f"{sid}_{'D0' if day_offset == 0 else 'Dm1'}"
         trains_list.append({
             'id': train_id,
-            'num': t_meta['trip_short_name'],
-            'headsign': t_meta['trip_headsign'],
+            'num': t_meta.get('trip_short_name') or t_meta.get('route_id', 'ES'),
+            'headsign': t_meta.get('trip_headsign') or dest_name,
             'origin': origin_name,
             'destination': dest_name,
             'status': status,
@@ -835,6 +836,7 @@ def build_european_sleeper_data():
             'network': 'european_sleeper',
             'operator_name': 'European Sleeper',
             'shape_id': shape_id,
+            'service_date': service_date,
             'time_to_dep_sec': time_to_dep_sec,
             'is_departing_soon': is_departing_soon
         })
@@ -845,7 +847,8 @@ def build_european_sleeper_data():
         'stations': list(stations_map.values())
     }
 
-def build_network_data():
+
+def build_network_data() -> Dict[str, Any]:
     """Charge et unifie les données des réseaux Eurostar et European Sleeper."""
     now = datetime.now(EUROSTAR_TZ)
 
@@ -863,8 +866,7 @@ def build_network_data():
         print(f"⚠️ Erreur lors du chargement European Sleeper ({e})")
         sleeper = {'trains': [], 'shapes_dict': {}, 'stations': []}
 
-    # 3. Fusion des trains et filtrage strict :
-    # Conserver EXCLUSIVEMENT les trains en cours de circulation et ceux qui partent dans moins de 20 min (<= 1200 s)
+    # 3. Fusion des trains et filtrage strict
     all_trains = eurostar['trains'] + sleeper['trains']
     radar_trains = []
     for t in all_trains:
@@ -887,7 +889,6 @@ def build_network_data():
     unified_shapes_list = list(unified_shapes_dict.values())
 
     # 5. Fusion et déduplication des gares
-    all_stations = []
     station_seen = {}
 
     for st in eurostar.get('stations', []):
@@ -920,7 +921,7 @@ def build_network_data():
         'date': now.strftime('%d/%m/%Y'),
         'networks': [
             {'id': 'all', 'name': 'Tous les réseaux (Eurostar & European Sleeper)', 'badge': '🌐'},
-            {'id': 'eurostar', 'name': 'Eurostar', 'badge': '🚆', 'color': '#00d2ff'},
+            {'id': 'eurostar', 'name': 'Eurostar', 'badge': '🚄', 'color': '#00d2ff'},
             {'id': 'european_sleeper', 'name': 'European Sleeper (Nuit)', 'badge': '🌙', 'color': '#a855f7'}
         ],
         'trains': radar_trains,
