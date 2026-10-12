@@ -4,9 +4,9 @@ Script de régénération et de maintenance du cache des tracés ferroviaires (B
 Permet de recalculer les tracés GPS précis de manière contrôlée, sans impacter le runtime de l'API.
 
 Usage :
-    python regenerate_shapes.py                     # Rafraîchit les tracés avec un délai de courtoisie de 1s
-    python regenerate_shapes.py --fallback-only     # Ne recalcule que les segments non résolus (<= 2 points)
-    python regenerate_shapes.py --force --delay 1.5 # Force le recalcul de tout le cache avec 1.5s de délai
+    python scripts/regenerate_shapes.py                     # Rafraîchit les tracés avec un délai de courtoisie de 1s
+    python scripts/regenerate_shapes.py --fallback-only     # Ne recalcule que les segments non résolus (<= 2 points)
+    python scripts/regenerate_shapes.py --force --delay 1.5 # Force le recalcul de tout le cache avec 1.5s de délai
 """
 
 import os
@@ -19,6 +19,7 @@ import time
 import zipfile
 import argparse
 import urllib.request
+from pathlib import Path
 from typing import Dict, List, Tuple
 
 # Configuration UTF-8 sur Windows
@@ -28,8 +29,18 @@ if sys.platform == "win32":
     except AttributeError:
         pass
 
-from config import STATIC_CACHE_FILE, EUROPEAN_SLEEPER_CACHE_FILE, STATION_NAMES
-from rail_routing_service import CACHE_FILE, rdp_simplify
+# Assure que la racine du projet est dans sys.path
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from app.core.config import (
+    STATIC_CACHE_FILE,
+    EUROPEAN_SLEEPER_CACHE_FILE,
+    STATION_NAMES,
+    RAIL_SHAPES_CACHE_FILE
+)
+from app.utils.geo import rdp_simplify
 
 
 def load_known_stations() -> Dict[str, Tuple[float, float]]:
@@ -107,14 +118,14 @@ def fetch_brouter_segment(lat1: float, lon1: float, lat2: float, lon2: float, ti
 
 
 def regenerate_cache(
-    cache_path: str = CACHE_FILE,
+    cache_path: str = RAIL_SHAPES_CACHE_FILE,
     delay: float = 1.0,
     force: bool = False,
     fallback_only: bool = False,
     timeout: int = 25
 ):
     print("=" * 75)
-    print("🚆 RÉGÉNÉRATION DU CACHE FERROVIAIRE BROUTER")
+    print("🚄 RÉGÉNÉRATION DU CACHE FERROVIAIRE BROUTER")
     print(f"📁 Fichier cible : {cache_path}")
     print(f"⏱️  Délai entre requêtes : {delay}s | Timeout : {timeout}s")
     print(f"⚙️  Mode : {'Forcer tout' if force else 'Fallback / Lignes droites uniquement' if fallback_only else 'Mise à jour standard'}")
@@ -224,8 +235,8 @@ def main():
     parser.add_argument(
         "--cache-file",
         type=str,
-        default=CACHE_FILE,
-        help=f"Chemin vers le fichier de cache JSON (défaut : {CACHE_FILE})."
+        default=RAIL_SHAPES_CACHE_FILE,
+        help=f"Chemin vers le fichier de cache JSON (défaut : {RAIL_SHAPES_CACHE_FILE})."
     )
 
     args = parser.parse_args()

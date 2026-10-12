@@ -1,6 +1,7 @@
 from typing import List, Optional, Any, Dict, Union
 from pydantic import BaseModel, Field
 
+
 class NetworkItem(BaseModel):
     id: int
     ref: str
@@ -18,6 +19,7 @@ class NetworkItem(BaseModel):
     regionId: int = 16
     embedMapCenter: Optional[List[float]] = None
 
+
 class NetworkLineItem(BaseModel):
     id: int
     ref: Optional[str] = None
@@ -33,14 +35,17 @@ class NetworkLineItem(BaseModel):
     onlineMarkerCount: int = 0
     onlineVehicleCount: int = 0
 
+
 class NetworkDetails(NetworkItem):
     operators: List[Dict[str, Any]] = []
     lines: List[NetworkLineItem] = []
+
 
 class VehicleActivity(BaseModel):
     status: str = "online"
     since: Optional[str] = None
     lineId: Optional[Union[int, str]] = None
+
 
 class VehicleItem(BaseModel):
     id: Union[int, str]
@@ -58,11 +63,13 @@ class VehicleItem(BaseModel):
     archivedFor: Optional[str] = None
     activity: VehicleActivity
 
+
 class MarkerPosition(BaseModel):
     latitude: float
     longitude: float
     bearing: Optional[float] = 0.0
     type: str = "COMPUTED"
+
 
 class VehicleMarker(BaseModel):
     id: str
@@ -72,9 +79,11 @@ class VehicleMarker(BaseModel):
     fillColor: str = "#00D2FF"
     position: MarkerPosition
 
+
 class MarkerCollection(BaseModel):
     items: List[VehicleMarker]
     at: str
+
 
 class JourneyCall(BaseModel):
     aimedTime: Optional[str] = None
@@ -91,6 +100,7 @@ class JourneyCall(BaseModel):
     callStatus: str = "SCHEDULED"
     flags: List[str] = []
 
+
 class JourneyPosition(BaseModel):
     latitude: float
     longitude: float
@@ -99,6 +109,7 @@ class JourneyPosition(BaseModel):
     type: str = "COMPUTED"
     distanceTraveled: float = 0.0
     recordedAt: Optional[str] = None
+
 
 class JourneyDetails(BaseModel):
     id: str
@@ -116,9 +127,11 @@ class JourneyDetails(BaseModel):
     serviceDate: str
     updatedAt: str
 
+
 class PathPolyline(BaseModel):
     p: List[List[float]] = []
     cancelled: List[str] = []
+
 
 class JourneyPath(BaseModel):
     path: PathPolyline

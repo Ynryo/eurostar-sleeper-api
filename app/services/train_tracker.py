@@ -1,17 +1,18 @@
 import time
-import math
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, date, timezone, timedelta
 from typing import Optional, List, Dict, Any
 
-from config import EUROSTAR_TZ, EUROPEAN_SLEEPER_TZ
-from gtfs_service import build_network_data
+from app.core.config import EUROSTAR_TZ, EUROPEAN_SLEEPER_TZ
+from app.services.gtfs_engine import build_network_data
+from app.utils.geo import haversine
 
 CACHE_TTL = 15  # secondes
 
 _cache_data = None
 _cache_time = 0
 
-def get_cached_raw_data():
+
+def get_cached_raw_data() -> Dict[str, Any]:
     global _cache_data, _cache_time
     now = time.time()
     if not _cache_data or (now - _cache_time > CACHE_TTL):
@@ -19,18 +20,11 @@ def get_cached_raw_data():
         _cache_time = now
     return _cache_data
 
-def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    R = 6371000.0  # mètres
-    phi1, phi2 = math.radians(lat1), math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlam = math.radians(lon2 - lon1)
-    a = math.sin(dphi / 2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2)**2
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 def format_iso_time(
     time_str: Optional[str],
     tz_offset_hours: int = 2,
-    base_date: Optional[datetime.date] = None
+    base_date: Optional[date] = None
 ) -> Optional[str]:
     """Convertit 'HH:MM' ou 'HH:MM:SS' en ISO 8601 (YYYY-MM-DDTHH:MM:SS+02:00) basé sur la date de service."""
     if not time_str or time_str == '--:--':
@@ -56,6 +50,7 @@ def format_iso_time(
         return f"{target_date.isoformat()}T{h:02d}:{m:02d}:{s:02d}{sign}{abs(tz_offset_hours):02d}:00"
     except Exception:
         return None
+
 
 def get_netex_stop_ref(stop: Dict[str, Any], is_sleeper: bool) -> str:
     """Génère un identifiant d'arrêt normalisé NeTEx (Code pays UIC + matricule)."""
@@ -85,8 +80,9 @@ def get_netex_stop_ref(stop: Dict[str, Any], is_sleeper: bool) -> str:
 
     return f"{country}:StopPoint:{stop_uic}"
 
+
 def format_journey_id(raw_id: Any, is_sleeper: bool) -> str:
-    """Convertit un identifiant de course brut en identifiant Spotted / Bus-Tracker ({networkRef}::VehicleJourney:{id})."""
+    """Convertit un identifiant de course brut en identifiant NeTEx Spotted ({networkRef}::VehicleJourney:{id})."""
     str_id = str(raw_id)
     if str_id.startswith("FR:Network:Eurostar::VehicleJourney:") or str_id.startswith("BE:Network:EuropeanSleeper::VehicleJourney:"):
         return str_id
@@ -100,6 +96,7 @@ def format_journey_id(raw_id: Any, is_sleeper: bool) -> str:
     else:
         return f"FR:Network:Eurostar::VehicleJourney:{str_id}"
 
+
 def extract_raw_journey_id(journey_id: str) -> str:
     """Extrait l'identifiant brut pour recherche interne si un ID NeTEx / Spotted est fourni."""
     if "::VehicleJourney:" in journey_id:
@@ -107,6 +104,7 @@ def extract_raw_journey_id(journey_id: str) -> str:
     if ":VehicleJourney:" in journey_id:
         return journey_id.split(":VehicleJourney:")[-1]
     return journey_id
+
 
 NETWORKS_METADATA = [
     {
@@ -141,8 +139,10 @@ NETWORKS_METADATA = [
     }
 ]
 
+
 def get_networks_list() -> List[Dict[str, Any]]:
     return NETWORKS_METADATA
+
 
 def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
     s_id = str(network_id).strip()
@@ -198,6 +198,7 @@ def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
         ]
     return []
 
+
 def get_vehicle_markers(
     sw_lat: Optional[float] = None,
     sw_lon: Optional[float] = None,
@@ -246,6 +247,7 @@ def get_vehicle_markers(
         "items": items,
         "at": now_iso
     }
+
 
 def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
     data = get_cached_raw_data()
@@ -343,6 +345,7 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
         "serviceDate": service_date_str,
         "updatedAt": now_iso
     }
+
 
 def get_journey_path(journey_id: str) -> Optional[Dict[str, Any]]:
     data = get_cached_raw_data()

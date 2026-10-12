@@ -14,11 +14,11 @@ ENV TZ=Europe/Paris
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copie du code source et des fichiers statiques
+# Copie du code source
 COPY . .
 
-# Exposition du port web
+# Exposition du port API
 EXPOSE 8080
 
 # Commande de démarrage
-CMD ["python", "gtfs.py"]
+CMD ["python", "-m", "app.main"]
