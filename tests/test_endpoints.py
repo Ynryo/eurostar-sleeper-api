@@ -109,6 +109,17 @@ def test_api():
         assert r_raw.json()["id"] == first_id
         print(f"✅ Résolution rétrocompatible via ID brut '{raw_id}' OK.")
 
+        # Test spécifique European Sleeper (expectedTime doit être None/null car purement théorique)
+        sleeper_marker = next((m for m in markers["items"] if "EuropeanSleeper" in m["id"]), None)
+        if sleeper_marker:
+            r_sl = client.get(f"/api/vehicle-journeys/{sleeper_marker['id']}")
+            assert r_sl.status_code == 200
+            sl_call = r_sl.json()["calls"][0]
+            assert sl_call["aimedTime"] is not None
+            assert sl_call["expectedTime"] is None, "European Sleeper ne doit pas avoir d'expectedTime (pas de temps réel)"
+            assert sl_call["expectedArrivalTime"] is None
+            print(f"✅ European Sleeper validé : aimedTime={sl_call['aimedTime']}, expectedTime=null (pas de GTFS-RT)")
+
     print("\n🎉 TOUS LES ENDPOINTS, IDENTIFIANTS ENTIERS ET FORMATS PATH.PHP SONT VALIDÉS ET CONFORMES !")
 
 if __name__ == "__main__":
