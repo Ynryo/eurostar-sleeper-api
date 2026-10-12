@@ -109,7 +109,7 @@ def extract_raw_journey_id(journey_id: str) -> str:
 NETWORKS_METADATA = [
     {
         "id": 10001,
-        "ref": "FR:Network:Eurostar",
+        "ref": "EUROSTAR",
         "name": "Eurostar",
         "authority": "Eurostar Group",
         "countryCode": "FR",
@@ -124,7 +124,7 @@ NETWORKS_METADATA = [
     },
     {
         "id": 10002,
-        "ref": "BE:Network:EuropeanSleeper",
+        "ref": "EUROPEAN-SLEEPER",
         "name": "European Sleeper",
         "authority": "European Sleeper BV",
         "countryCode": "BE",
@@ -258,7 +258,7 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
 
     is_sleeper = train.get('network') == 'european_sleeper'
     net_id = 10002 if is_sleeper else 10001
-    net_ref = "BE:Network:EuropeanSleeper" if is_sleeper else "FR:Network:Eurostar"
+    net_ref = "EuropeanSleeper" if is_sleeper else "Eurostar"
     line_id = 1020 if is_sleeper else 1010
     line_ref = "BE:Line:EuropeanSleeper" if is_sleeper else "FR:Line:Eurostar"
     journey_netex_id = format_journey_id(train.get('id'), is_sleeper)
