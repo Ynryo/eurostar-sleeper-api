@@ -1,5 +1,5 @@
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, date, timezone, timedelta
 from typing import Optional, List, Dict, Any
 
 from app.core.config import EUROSTAR_TZ, EUROPEAN_SLEEPER_TZ
@@ -24,7 +24,7 @@ def get_cached_raw_data() -> Dict[str, Any]:
 def format_iso_time(
     time_str: Optional[str],
     tz_offset_hours: int = 2,
-    base_date: Optional[datetime.date] = None
+    base_date: Optional[date] = None
 ) -> Optional[str]:
     """Convertit 'HH:MM' ou 'HH:MM:SS' en ISO 8601 (YYYY-MM-DDTHH:MM:SS+02:00) basé sur la date de service."""
     if not time_str or time_str == '--:--':
