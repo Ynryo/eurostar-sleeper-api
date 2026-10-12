@@ -28,7 +28,7 @@ EUROSTAR_STATIC_URL = "https://integration-storage.dm.eurostar.com/gtfs-prod/gtf
 STATIC_CACHE_FILE = os.path.join(BASE_DIR, "eurostar_gtfs_static.zip")
 
 # URLs et fichiers GTFS European Sleeper
-EUROPEAN_SLEEPER_STATIC_URL = "https://raw.githubusercontent.com/deryclem/european-sleeper-gtfs/main/gtfs-european-sleeper.zip"
+EUROPEAN_SLEEPER_STATIC_URL = "https://jbb.ghsq.de/gtfs/eu-es.gtfs.zip"
 EUROPEAN_SLEEPER_CACHE_FILE = os.path.join(BASE_DIR, "european_sleeper_gtfs.zip")
 
 # Configuration réseau et serveur HTTP
