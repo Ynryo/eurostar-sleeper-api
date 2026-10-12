@@ -432,7 +432,7 @@ def build_eurostar_data():
 
         active_stops = [s for s in enriched_stops if not s['is_skipped']]
         has_skipped = any(s['is_skipped'] for s in enriched_stops)
-        skipped_count = sum(1 for s in enriched_stops if s['is_skipped'])
+        skipped_count = sum(1 for s in enriched_stops if s['is_skipped'])\
 
         assigned_shape_id = t_meta.get('shape_id', '')
         if not assigned_shape_id or assigned_shape_id not in shapes_dict:
@@ -588,7 +588,8 @@ def get_sleeper_static_data():
                 'name': r['stop_name'],
                 'lat': lat,
                 'lon': lon,
-                'stop_code': r.get('stop_code', '')
+                'stop_code': sid,
+                'platform': r.get('platform_code', '')
             }
             stations_map[sid] = {
                 'id': f"es_{sid}",
@@ -598,20 +599,50 @@ def get_sleeper_static_data():
                 'network': 'european_sleeper'
             }
 
-    # 2. Calendar dates
+    # 2. Routes
+    routes = {}
+    if 'routes.txt' in zf.namelist():
+        with zf.open('routes.txt') as f:
+            for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8')):
+                routes[r['route_id']] = r
+
+    # 3. Shapes (tracés OSM haute résolution inclus directement)
+    shapes_raw = {}
+    if 'shapes.txt' in zf.namelist():
+        with zf.open('shapes.txt') as f:
+            for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8')):
+                shid = r['shape_id']
+                if shid not in shapes_raw:
+                    shapes_raw[shid] = []
+                shapes_raw[shid].append([float(r['shape_pt_lat']), float(r['shape_pt_lon'])])
+
+    shapes_dict = {}
+    for shid, pts in shapes_raw.items():
+        sampled = pts[::2]
+        if sampled[-1] != pts[-1]:
+            sampled.append(pts[-1])
+        shapes_dict[shid] = sampled
+
+    # 4. Calendar dates
     calendar_dates = {}
     with zf.open('calendar_dates.txt') as f:
         for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8')):
-            if r['exception_type'] == '1':
+            if r.get('exception_type') == '1':
                 d = r['date']
                 calendar_dates.setdefault(d, set()).add(r['service_id'])
 
-    # 3. Trips & Stop times
+    # 5. Trips
     trips = {}
+    service_to_trips = {}
     with zf.open('trips.txt') as f:
         for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8')):
-            trips[r['trip_id']] = r
+            tid = r['trip_id']
+            route_info = routes.get(r.get('route_id'), {})
+            r['trip_short_name'] = r.get('trip_short_name') or route_info.get('route_short_name') or r.get('route_id', 'ES')
+            trips[tid] = r
+            service_to_trips.setdefault(r['service_id'], []).append(r)
 
+    # 6. Stop times
     trip_stops = {}
     with zf.open('stop_times.txt') as f:
         for r in csv.DictReader(io.TextIOWrapper(f, encoding='utf-8')):
@@ -632,28 +663,30 @@ def get_sleeper_static_data():
     yesterday_str = (now - timedelta(days=1)).strftime('%Y%m%d')
 
     # Gestion des jours de service actifs (départ hier soir et départ ce soir)
-    active_service_days = []
+    active_trips_candidates = []
     if yesterday_str in calendar_dates:
-        for s in calendar_dates[yesterday_str]:
-            active_service_days.append((s, -1))
+        for sid in calendar_dates[yesterday_str]:
+            for t in service_to_trips.get(sid, []):
+                active_trips_candidates.append((t['trip_id'], -1))
     if today_str in calendar_dates:
-        for s in calendar_dates[today_str]:
-            active_service_days.append((s, 0))
+        for sid in calendar_dates[today_str]:
+            for t in service_to_trips.get(sid, []):
+                active_trips_candidates.append((t['trip_id'], 0))
 
-    if not active_service_days and calendar_dates:
+    if not active_trips_candidates and calendar_dates:
         all_sorted = sorted(calendar_dates.keys())
         sim_date = all_sorted[0]
-        for s in calendar_dates[sim_date]:
-            active_service_days.append((s, 0))
+        for sid in calendar_dates[sim_date]:
+            for t in service_to_trips.get(sid, []):
+                active_trips_candidates.append((t['trip_id'], 0))
 
-    shapes_dict = {}
     active_trips_data = []
 
-    for sid, day_offset in active_service_days:
-        t_meta = trips.get(sid)
+    for tid, day_offset in active_trips_candidates:
+        t_meta = trips.get(tid)
         if not t_meta:
             continue
-        s_list = trip_stops.get(sid, [])
+        s_list = trip_stops.get(tid, [])
         if not s_list:
             continue
 
@@ -661,6 +694,7 @@ def get_sleeper_static_data():
         last_stop = s_list[-1]
         origin_name = stops[first_stop['stop_id']]['name']
         dest_name = stops[last_stop['stop_id']]['name']
+        t_meta['trip_headsign'] = t_meta.get('trip_headsign') or dest_name
 
         enriched_stops = []
         for s in s_list:
@@ -671,6 +705,8 @@ def get_sleeper_static_data():
             dm = (s['dep_sec'] % 3600) // 60
             next_day_arr = ' (+1j)' if s['arr_sec'] >= 86400 else ''
             next_day_dep = ' (+1j)' if s['dep_sec'] >= 86400 else ''
+
+            platform_code = extract_platform_code(None, s['stop_id'], stops)
 
             enriched_stops.append({
                 'seq': s['seq'],
@@ -689,18 +725,20 @@ def get_sleeper_static_data():
                 'est_dep_sec': s['dep_sec'],
                 'delay_arr': 0,
                 'delay_dep': 0,
-                'track': '',
+                'track': platform_code or '',
+                'platform': platform_code or '',
                 'is_skipped': False
             })
 
-        # Génération / récupération du tracé ferroviaire réel via OpenStreetMap
-        stops_coords = [[s['lat'], s['lon']] for s in enriched_stops]
-        full_rail_pts = rail_router.get_full_route(stops_coords)
-        shape_id = f"SHAPE_ES_{sid}"
-        shapes_dict[shape_id] = full_rail_pts
+        shape_id = t_meta.get('shape_id')
+        if not shape_id or shape_id not in shapes_dict:
+            stops_coords = [[s['lat'], s['lon']] for s in enriched_stops]
+            full_rail_pts = rail_router.get_full_route(stops_coords)
+            shape_id = f"SHAPE_ES_{tid}"
+            shapes_dict[shape_id] = full_rail_pts
 
         active_trips_data.append({
-            'sid': sid,
+            'sid': tid,
             'day_offset': day_offset,
             't_meta': t_meta,
             's_list': s_list,
@@ -790,21 +828,18 @@ def build_european_sleeper_data():
                     c_st = stops[cur_s['stop_id']]
                     n_st = stops[nxt_s['stop_id']]
 
-                    # Positionnement exact sur la voie ferrée réelle
-                    seg = rail_router.get_rail_segment(c_st['lat'], c_st['lon'], n_st['lat'], n_st['lon'])
-                    if len(seg) >= 2:
-                        idx = min(len(seg) - 1, max(0, int(ratio * (len(seg) - 1))))
-                        pos = seg[idx]
-                        nxt_idx = min(len(seg) - 1, idx + 1)
-                        if nxt_idx != idx:
-                            bearing = calculate_bearing(pos[0], pos[1], seg[nxt_idx][0], seg[nxt_idx][1])
-                        else:
-                            bearing = calculate_bearing(c_st['lat'], c_st['lon'], n_st['lat'], n_st['lon'])
+                    # Positionnement exact sur la voie ferrée réelle (via shape GTFS haute résolution)
+                    full_shape = shapes_dict.get(shape_id)
+                    track_sub = extract_sub_shape(full_shape, c_st['lat'], c_st['lon'], n_st['lat'], n_st['lon'])
+                    if not track_sub or len(track_sub) < 2:
+                        track_sub = rail_router.get_rail_segment(c_st['lat'], c_st['lon'], n_st['lat'], n_st['lon'])
+
+                    if track_sub and len(track_sub) >= 2:
+                        pos, bearing = interpolate_along_track(track_sub, ratio)
                     else:
-                        pos = [
-                            round(c_st['lat'] + (n_st['lat'] - c_st['lat']) * ratio, 6),
-                            round(c_st['lon'] + (n_st['lon'] - c_st['lon']) * ratio, 6)
-                        ]
+                        interp_lat = c_st['lat'] + (n_st['lat'] - c_st['lat']) * ratio
+                        interp_lon = c_st['lon'] + (n_st['lon'] - c_st['lon']) * ratio
+                        pos = [round(interp_lat, 6), round(interp_lon, 6)]
                         bearing = calculate_bearing(c_st['lat'], c_st['lon'], n_st['lat'], n_st['lon'])
 
                     progress = (i + ratio) / (len(s_list) - 1)
@@ -815,8 +850,8 @@ def build_european_sleeper_data():
         train_id = f"{sid}_{'D0' if day_offset == 0 else 'Dm1'}"
         trains_list.append({
             'id': train_id,
-            'num': t_meta['trip_short_name'],
-            'headsign': t_meta['trip_headsign'],
+            'num': t_meta.get('trip_short_name') or t_meta.get('route_id', 'ES'),
+            'headsign': t_meta.get('trip_headsign') or dest_name,
             'origin': origin_name,
             'destination': dest_name,
             'status': status,

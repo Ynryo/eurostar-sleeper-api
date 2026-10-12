@@ -32,13 +32,16 @@ def format_iso_time(time_str: Optional[str], tz_offset_hours: int = 2) -> Option
     if not time_str or time_str == '--:--':
         return None
     try:
-        parts = time_str.split(':')
+        clean_time = time_str.split()[0]
+        parts = clean_time.split(':')
         h = int(parts[0])
         m = int(parts[1])
         s = int(parts[2]) if len(parts) > 2 else 0
 
-        # Gestion des heures >= 24h dans GTFS
+        # Gestion des heures >= 24h ou mentions +1j dans GTFS
         day_add = h // 24
+        if '(+1j)' in time_str or '(+1d)' in time_str or '+1' in time_str:
+            day_add = max(day_add, 1)
         h = h % 24
 
         today = datetime.now(EUROSTAR_TZ).date() + timedelta(days=day_add)
@@ -66,6 +69,8 @@ def get_netex_stop_ref(stop: Dict[str, Any], is_sleeper: bool) -> str:
         country = "CZ"
     elif stop_uic.startswith("85"):
         country = "CH"
+    elif stop_uic.startswith("83"):
+        country = "IT"
     elif stop_uic.startswith("81"):
         country = "AT"
     else:
@@ -334,7 +339,7 @@ def get_journey_path(journey_id: str) -> Optional[Dict[str, Any]]:
     if shape_id and shape_id in data.get('shapes_dict', {}):
         raw_coords = data['shapes_dict'][shape_id]
     elif train.get('stops'):
-        raw_coords = [[s['lat'], s['lon']] for s in train['stops'] if not s.get('is_skipped')]
+        raw_coords = [[s['lat'], s['lon']] for s in train['stops'] if not s.get('is_skipped')]\
 
     if not raw_coords:
         return {
