@@ -432,7 +432,7 @@ def build_eurostar_data():
 
         active_stops = [s for s in enriched_stops if not s['is_skipped']]
         has_skipped = any(s['is_skipped'] for s in enriched_stops)
-        skipped_count = sum(1 for s in enriched_stops if s['is_skipped'])\
+        skipped_count = sum(1 for s in enriched_stops if s['is_skipped'])
 
         assigned_shape_id = t_meta.get('shape_id', '')
         if not assigned_shape_id or assigned_shape_id not in shapes_dict:
@@ -545,6 +545,7 @@ def build_eurostar_data():
             'shape_id': assigned_shape_id,
             'network': 'eurostar',
             'operator_name': 'Eurostar',
+            'service_date': now.strftime('%Y-%m-%d'),
             'time_to_dep_sec': time_to_dep_sec,
             'is_departing_soon': is_departing_soon
         })
@@ -667,22 +668,22 @@ def get_sleeper_static_data():
     if yesterday_str in calendar_dates:
         for sid in calendar_dates[yesterday_str]:
             for t in service_to_trips.get(sid, []):
-                active_trips_candidates.append((t['trip_id'], -1))
+                active_trips_candidates.append((t['trip_id'], -1, yesterday_str))
     if today_str in calendar_dates:
         for sid in calendar_dates[today_str]:
             for t in service_to_trips.get(sid, []):
-                active_trips_candidates.append((t['trip_id'], 0))
+                active_trips_candidates.append((t['trip_id'], 0, today_str))
 
     if not active_trips_candidates and calendar_dates:
         all_sorted = sorted(calendar_dates.keys())
         sim_date = all_sorted[0]
         for sid in calendar_dates[sim_date]:
             for t in service_to_trips.get(sid, []):
-                active_trips_candidates.append((t['trip_id'], 0))
+                active_trips_candidates.append((t['trip_id'], 0, sim_date))
 
     active_trips_data = []
 
-    for tid, day_offset in active_trips_candidates:
+    for tid, day_offset, s_date_raw in active_trips_candidates:
         t_meta = trips.get(tid)
         if not t_meta:
             continue
@@ -690,6 +691,7 @@ def get_sleeper_static_data():
         if not s_list:
             continue
 
+        service_date = f"{s_date_raw[:4]}-{s_date_raw[4:6]}-{s_date_raw[6:8]}"
         first_stop = s_list[0]
         last_stop = s_list[-1]
         origin_name = stops[first_stop['stop_id']]['name']
@@ -740,6 +742,7 @@ def get_sleeper_static_data():
         active_trips_data.append({
             'sid': tid,
             'day_offset': day_offset,
+            'service_date': service_date,
             't_meta': t_meta,
             's_list': s_list,
             'first_stop': first_stop,
@@ -775,6 +778,7 @@ def build_european_sleeper_data():
     for item in active_trips:
         sid = item['sid']
         day_offset = item['day_offset']
+        service_date = item.get('service_date', now.strftime('%Y-%m-%d'))
         t_meta = item['t_meta']
         s_list = item['s_list']
         first_stop = item['first_stop']
@@ -870,6 +874,7 @@ def build_european_sleeper_data():
             'network': 'european_sleeper',
             'operator_name': 'European Sleeper',
             'shape_id': shape_id,
+            'service_date': service_date,
             'time_to_dep_sec': time_to_dep_sec,
             'is_departing_soon': is_departing_soon
         })

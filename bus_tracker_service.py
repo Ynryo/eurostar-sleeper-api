@@ -27,8 +27,12 @@ def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     a = math.sin(dphi / 2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2)**2
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-def format_iso_time(time_str: Optional[str], tz_offset_hours: int = 2) -> Optional[str]:
-    """Convertit 'HH:MM' ou 'HH:MM:SS' en ISO 8601 (YYYY-MM-DDTHH:MM:SS+02:00)."""
+def format_iso_time(
+    time_str: Optional[str],
+    tz_offset_hours: int = 2,
+    base_date: Optional[datetime.date] = None
+) -> Optional[str]:
+    """Convertit 'HH:MM' ou 'HH:MM:SS' en ISO 8601 (YYYY-MM-DDTHH:MM:SS+02:00) basé sur la date de service."""
     if not time_str or time_str == '--:--':
         return None
     try:
@@ -38,15 +42,18 @@ def format_iso_time(time_str: Optional[str], tz_offset_hours: int = 2) -> Option
         m = int(parts[1])
         s = int(parts[2]) if len(parts) > 2 else 0
 
-        # Gestion des heures >= 24h ou mentions +1j dans GTFS
+        # Gestion des heures >= 24h ou mentions +1j / +2j dans GTFS
         day_add = h // 24
-        if '(+1j)' in time_str or '(+1d)' in time_str or '+1' in time_str:
+        if '(+2j)' in time_str or '(+2d)' in time_str or '+2' in time_str:
+            day_add = max(day_add, 2)
+        elif '(+1j)' in time_str or '(+1d)' in time_str or '+1' in time_str:
             day_add = max(day_add, 1)
         h = h % 24
 
-        today = datetime.now(EUROSTAR_TZ).date() + timedelta(days=day_add)
+        ref_date = base_date if base_date is not None else datetime.now(EUROSTAR_TZ).date()
+        target_date = ref_date + timedelta(days=day_add)
         sign = "+" if tz_offset_hours >= 0 else "-"
-        return f"{today.isoformat()}T{h:02d}:{m:02d}:{s:02d}{sign}{abs(tz_offset_hours):02d}:00"
+        return f"{target_date.isoformat()}T{h:02d}:{m:02d}:{s:02d}{sign}{abs(tz_offset_hours):02d}:00"
     except Exception:
         return None
 
@@ -198,7 +205,7 @@ def get_vehicle_markers(
     ne_lon: Optional[float] = None
 ) -> Dict[str, Any]:
     data = get_cached_raw_data()
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     items = []
 
     for t in data.get('trains', []):
@@ -255,6 +262,16 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
     journey_netex_id = format_journey_id(train.get('id'), is_sleeper)
     tz_offset = 2
 
+    # Date d'exploitation réelle du train (serviceDate de référence)
+    service_date_str = train.get('service_date')
+    if not service_date_str:
+        service_date_str = datetime.now(EUROSTAR_TZ).strftime("%Y-%m-%d")
+
+    try:
+        base_date = datetime.strptime(service_date_str, "%Y-%m-%d").date()
+    except Exception:
+        base_date = datetime.now(EUROSTAR_TZ).date()
+
     # Construction des calls (arrêts)
     calls = []
     stops = train.get('stops', [])
@@ -264,10 +281,10 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
         if idx > 0:
             cum_distance += haversine(stops[idx-1]['lat'], stops[idx-1]['lon'], s['lat'], s['lon'])
 
-        aimed_dep = format_iso_time(s.get('sched_dep'), tz_offset)
-        expected_dep = format_iso_time(s.get('est_dep'), tz_offset)
-        aimed_arr = format_iso_time(s.get('sched_arr'), tz_offset)
-        expected_arr = format_iso_time(s.get('est_arr'), tz_offset)
+        aimed_dep = format_iso_time(s.get('sched_dep'), tz_offset, base_date=base_date)
+        expected_dep = format_iso_time(s.get('est_dep'), tz_offset, base_date=base_date)
+        aimed_arr = format_iso_time(s.get('sched_arr'), tz_offset, base_date=base_date)
+        expected_arr = format_iso_time(s.get('est_arr'), tz_offset, base_date=base_date)
 
         # Statut de l'arrêt
         if s.get('is_skipped'):
@@ -295,7 +312,7 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
             "flags": ["NO_PICKUP"] if idx == len(stops) - 1 else ([] if idx > 0 else ["NO_DROP_OFF"])
         })
 
-    now_iso = datetime.now(timezone.utc).isoformat()
+    now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shape_id = train.get('shape_id')
     path_ref = f"{net_ref}::Route:{shape_id}" if shape_id else None
 
@@ -323,7 +340,7 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
             "number": str(train.get('num', '')),
             "ref": f"{net_ref}::Vehicle:{train.get('num', '')}"
         },
-        "serviceDate": datetime.now(EUROSTAR_TZ).strftime("%Y-%m-%d"),
+        "serviceDate": service_date_str,
         "updatedAt": now_iso
     }
 
@@ -339,7 +356,7 @@ def get_journey_path(journey_id: str) -> Optional[Dict[str, Any]]:
     if shape_id and shape_id in data.get('shapes_dict', {}):
         raw_coords = data['shapes_dict'][shape_id]
     elif train.get('stops'):
-        raw_coords = [[s['lat'], s['lon']] for s in train['stops'] if not s.get('is_skipped')]\
+        raw_coords = [[s['lat'], s['lon']] for s in train['stops'] if not s.get('is_skipped')]
 
     if not raw_coords:
         return {
