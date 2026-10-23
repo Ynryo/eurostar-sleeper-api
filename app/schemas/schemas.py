@@ -16,12 +16,13 @@ class NetworkItem(BaseModel):
     color: Optional[str] = None
     textColor: Optional[str] = None
     hasVehiclesFeature: bool = True
-    regionId: int = 16
+    regionId: int = 13
     embedMapCenter: Optional[List[float]] = None
 
 
 class NetworkLineItem(BaseModel):
     id: int
+    networkId: int
     ref: Optional[str] = None
     lineRef: Optional[str] = None
     references: List[str] = []
@@ -124,6 +125,9 @@ class JourneyDetails(BaseModel):
     networkRef: Optional[str] = None
     journeyRef: str
     vehicle: Dict[str, Any]
+    occupancy: str = "UNKNOWN"
+    wheelchairAccessible: bool = True
+    bikesAllowed: bool = True
     serviceDate: str
     updatedAt: str
 

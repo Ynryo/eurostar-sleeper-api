@@ -110,6 +110,7 @@ NETWORKS_METADATA = [
     {
         "id": 10001,
         "ref": "FR:Network:Eurostar",
+        "networkRef": "FR:Network:Eurostar",
         "name": "Eurostar",
         "authority": "Eurostar Group",
         "countryCode": "FR",
@@ -117,7 +118,7 @@ NETWORKS_METADATA = [
         "logoHref": "https://upload.wikimedia.org/wikipedia/commons/3/33/Eurostar_logo_%282023%29.svg",
         "darkModeLogoHref": "https://upload.wikimedia.org/wikipedia/commons/3/33/Eurostar_logo_%282023%29.svg",
         "color": "116BFE",
-        "textColor": "000000",
+        "textColor": "#FFFFFF",
         "hasVehiclesFeature": True,
         "regionId": 13,
         "embedMapCenter": [2.355, 48.88, 7]
@@ -125,6 +126,7 @@ NETWORKS_METADATA = [
     {
         "id": 10002,
         "ref": "BE:Network:EuropeanSleeper",
+        "networkRef": "BE:Network:EuropeanSleeper",
         "name": "European Sleeper",
         "authority": "European Sleeper BV",
         "countryCode": "BE",
@@ -132,7 +134,7 @@ NETWORKS_METADATA = [
         "logoHref": "https://upload.wikimedia.org/wikipedia/commons/3/3d/European_Sleeper_Logo.svg",
         "darkModeLogoHref": "https://upload.wikimedia.org/wikipedia/commons/3/3d/European_Sleeper_Logo.svg",
         "color": "FF3602",
-        "textColor": "FFFFFF",
+        "textColor": "#FFFFFF",
         "hasVehiclesFeature": True,
         "regionId": 13,
         "embedMapCenter": [4.35, 50.85, 6]
@@ -151,19 +153,22 @@ def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
         if str(n["id"]) == s_id
         or n["ref"] == s_id
         or n.get("networkRef") == s_id
+        or s_id.upper() in n["ref"].upper()
+        or s_id.upper() in n["name"].upper()
     ), None)
 
     if not net:
         return None
 
     data = get_cached_raw_data()
-    euro_count = len([t for t in data['trains'] if t.get('network') == 'eurostar'])
-    sleeper_count = len([t for t in data['trains'] if t.get('network') == 'european_sleeper'])
+    euro_count = len([t for t in data.get('trains', []) if t.get('network') == 'eurostar'])
+    sleeper_count = len([t for t in data.get('trains', []) if t.get('network') == 'european_sleeper'])
 
     if "Eurostar" in net["name"]:
         return [
             {
                 "id": 1010,
+                "networkId": 10001,
                 "ref": "FR:Line:Eurostar",
                 "lineRef": "FR:Line:Eurostar",
                 "references": ["FR:Line:Eurostar", "EUROSTAR:Line:1"],
@@ -182,6 +187,7 @@ def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
         return [
             {
                 "id": 1020,
+                "networkId": 10002,
                 "ref": "BE:Line:EuropeanSleeper",
                 "lineRef": "BE:Line:EuropeanSleeper",
                 "references": ["BE:Line:EuropeanSleeper", "EUROPEAN_SLEEPER:Line:1"],
@@ -197,6 +203,21 @@ def get_network_lines(network_id: Any) -> Optional[List[Dict[str, Any]]]:
             }
         ]
     return []
+
+
+def get_line_by_id(line_id: Any) -> Optional[Dict[str, Any]]:
+    s_id = str(line_id).strip()
+    all_lines = (get_network_lines(10001) or []) + (get_network_lines(10002) or [])
+    for line in all_lines:
+        if (
+            str(line.get("id")) == s_id
+            or line.get("ref") == s_id
+            or line.get("lineRef") == s_id
+            or s_id in line.get("references", [])
+            or s_id.lower() == line.get("number", "").lower()
+        ):
+            return line
+    return None
 
 
 def get_vehicle_markers(
@@ -291,8 +312,6 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
         # Statut de l'arrêt
         if s.get('is_skipped'):
             call_status = "SKIPPED"
-        elif train.get('status') == 'TERMINATED':
-            call_status = "PASSED"
         else:
             call_status = "SCHEDULED"
 
@@ -317,6 +336,7 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     shape_id = train.get('shape_id')
     path_ref = f"{net_ref}::Route:{shape_id}" if shape_id else None
+    train_num = str(train.get('num', ''))
 
     return {
         "id": journey_netex_id,
@@ -339,9 +359,17 @@ def get_journey_details(journey_id: str) -> Optional[Dict[str, Any]]:
         "networkRef": net_ref,
         "journeyRef": journey_netex_id,
         "vehicle": {
-            "number": str(train.get('num', '')),
-            "ref": f"{net_ref}::Vehicle:{train.get('num', '')}"
+            "id": train_num,
+            "number": train_num,
+            "ref": f"{net_ref}::Vehicle:{train_num}",
+            "designation": "European Sleeper Night Train" if is_sleeper else "Eurostar e320",
+            "type": "TRAIN",
+            "airConditioning": "PRESENT",
+            "usbPorts": True
         },
+        "occupancy": "UNKNOWN",
+        "wheelchairAccessible": True,
+        "bikesAllowed": True,
         "serviceDate": service_date_str,
         "updatedAt": now_iso
     }
