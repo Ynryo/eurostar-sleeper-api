@@ -20,8 +20,12 @@ def test_api():
     assert len(networks) == 2
     assert networks[0]["id"] == 10001
     assert networks[0]["ref"] == "FR:Network:Eurostar"
+    assert networks[0]["color"] == "116BFE"  # format sans # pour Network::fromArray
+    assert networks[0]["textColor"] == "#FFFFFF"
     assert networks[1]["id"] == 10002
     assert networks[1]["ref"] == "BE:Network:EuropeanSleeper"
+    assert networks[1]["color"] == "FF3602"
+    assert networks[1]["textColor"] == "#FFFFFF"
     print(f"✅ /api/networks OK: IDs entiers ({networks[0]['id']}, {networks[1]['id']}) et NeTEx refs ({networks[0]['ref']}, {networks[1]['ref']}) validés.")
 
     print("Testing /api/networks/10001?withDetails=true (BusTrackerClient.php contract)...")
@@ -32,7 +36,38 @@ def test_api():
     assert "lines" in net_details
     assert len(net_details["lines"]) == 1
     assert net_details["lines"][0]["id"] == 1010
+    assert net_details["lines"][0]["networkId"] == 10001
+    assert "references" in net_details["lines"][0]
     print(f"✅ /api/networks/10001?withDetails=true OK: {len(net_details['lines'])} ligne(s) rattachée(s) (lineId: {net_details['lines'][0]['id']})")
+
+    print("Testing /api/networks/10001/lines (Spotted API getNetworkLines contract)...")
+    r_net_lines = client.get("/api/networks/10001/lines")
+    assert r_net_lines.status_code == 200
+    lines_10001 = r_net_lines.json()
+    assert isinstance(lines_10001, list)
+    assert len(lines_10001) == 1
+    assert lines_10001[0]["id"] == 1010
+    assert lines_10001[0]["references"][0] == "FR:Line:Eurostar"
+    print("✅ /api/networks/10001/lines OK.")
+
+    print("Testing /api/lines and /api/lines/1010 (LineService.php contract)...")
+    r_lines = client.get("/api/lines")
+    assert r_lines.status_code == 200
+    assert len(r_lines.json()) == 2
+    r_line_1010 = client.get("/api/lines/1010")
+    assert r_line_1010.status_code == 200
+    line_1010 = r_line_1010.json()
+    assert line_1010["id"] == 1010
+    assert line_1010["networkId"] == 10001
+    assert line_1010["number"] == "Eurostar"
+    assert line_1010["color"] == "116BFE"
+    assert line_1010["textColor"] == "FFFFFF"
+
+    r_line_1020 = client.get("/api/lines/1020")
+    assert r_line_1020.status_code == 200
+    assert r_line_1020.json()["id"] == 1020
+    assert r_line_1020.json()["number"] == "European Sleeper"
+    print("✅ /api/lines and /api/lines/{id} OK.")
 
     print("Testing /api/networks/10002?withDetails=true (Sleeper)...")
     r_details_sl = client.get("/api/networks/10002?withDetails=true")
@@ -86,12 +121,27 @@ def test_api():
         assert "calls" in journey_data
         assert len(journey_data["calls"]) > 0
 
+        # Vérification des champs requis par JourneyDetails.php de spotted-api
+        assert "occupancy" in journey_data
+        assert "wheelchairAccessible" in journey_data
+        assert journey_data["wheelchairAccessible"] is True
+        assert "bikesAllowed" in journey_data
+        assert journey_data["bikesAllowed"] is True
+
+        # Validation du véhicule
+        vehicle = journey_data["vehicle"]
+        assert "id" in vehicle
+        assert "number" in vehicle
+        assert vehicle["type"] == "TRAIN"
+        assert vehicle["airConditioning"] == "PRESENT"
+        assert vehicle["usbPorts"] is True
+
         # Validation du format UIC NeTEx dans stopRef
         first_call = journey_data["calls"][0]
         stop_ref = first_call["stopRef"]
         assert ":StopPoint:" in stop_ref
         print(f"✅ /api/vehicle-journeys/{first_id} OK: arrêt {first_call['stopName']} -> stopRef NeTEx: {stop_ref}")
-        print(f"   vehicle: {journey_data['vehicle']['ref']}, line: {journey_data['lineId']} (ref: {journey_data.get('lineRef')}), network: {journey_data['networkId']} (ref: {journey_data.get('networkRef')})")
+        print(f"   vehicle: {vehicle['ref']} (id: {vehicle['id']}, type: {vehicle['type']}), line: {journey_data['lineId']}, network: {journey_data['networkId']}")
 
         print(f"Testing /api/vehicle-journeys/{first_id}/paths...")
         r_path = client.get(f"/api/vehicle-journeys/{first_id}/paths")
