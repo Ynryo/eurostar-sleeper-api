@@ -42,14 +42,15 @@ eurostar-sleeper-api/
 │   │   └── config.py               # Configuration centrale (chemins data/cache, fuseaux horaires, URLs)
 │   ├── api/
 │   │   ├── __init__.py
-│   │   ├── router.py               # Agrégation des sous-routeurs API
+│   │   ├── router.py               # Agrégation des sous-routeurs API (/networks, /lines, /journeys)
 │   │   └── routes/
 │   │       ├── __init__.py
-│   │       ├── networks.py         # Endpoints /api/networks et /api/networks/{id}
+│   │       ├── networks.py         # Endpoints /api/networks, /api/networks/{id} et /lines
+│   │       ├── lines.py            # Endpoints /api/lines et /api/lines/{line_id}
 │   │       └── journeys.py         # Endpoints /api/vehicle-journeys, markers et paths
 │   ├── schemas/
 │   │   ├── __init__.py
-│   │   └── schemas.py              # Modèles Pydantic standardisés NeTEx / Spotted
+│   │   └── schemas.py              # Modèles Pydantic standardisés NeTEx / Spotted API
 │   ├── services/
 │   │   ├── __init__.py
 │   │   ├── train_tracker.py        # Logique métier Spotted/NeTEx (markers, calls, formatage trains)
@@ -66,7 +67,7 @@ eurostar-sleeper-api/
 │   └── regenerate_shapes.py        # Outil CLI de maintenance et régénération des tracés BRouter
 ├── tests/
 │   ├── __init__.py
-│   └── test_endpoints.py           # Suite de tests d'intégration et de validation des contrats d'API
+│   └── test_endpoints.py           # Suite de tests d'intégration et de validation des contrats Spotted API
 ├── Dockerfile                      # Image conteneur optimisée (Python 3.12-slim)
 ├── docker-compose.yaml             # Orchestration Docker
 ├── requirements.txt                # Dépendances Python minimales
@@ -75,18 +76,63 @@ eurostar-sleeper-api/
 
 ---
 
-## 🔌 Points d'Accès API
+## 🔌 Points d'Accès API & Contrat Spotted API
 
 La documentation interactive **OpenAPI / Swagger** est accessible directement sur `http://localhost:8080/docs`.
 
 ### 1. `GET /api/networks`
-Retourne la liste des réseaux gérés (Eurostar : 10001, European Sleeper : 10002) selon le standard européen NeTEx et Bus-Tracker.
+Retourne la liste des réseaux gérés (Eurostar : `10001`, European Sleeper : `10002`) conforme au contrat `Network::fromArray` de `spotted-api` :
+```json
+[
+  {
+    "id": 10001,
+    "ref": "FR:Network:Eurostar",
+    "networkRef": "FR:Network:Eurostar",
+    "name": "Eurostar",
+    "authority": "Eurostar Group",
+    "countryCode": "FR",
+    "timezone": "Europe/Paris",
+    "logoHref": "https://upload.wikimedia.org/wikipedia/commons/3/33/Eurostar_logo_%282023%29.svg",
+    "darkModeLogoHref": "https://upload.wikimedia.org/wikipedia/commons/3/33/Eurostar_logo_%282023%29.svg",
+    "color": "116BFE",
+    "textColor": "#FFFFFF",
+    "hasVehiclesFeature": true,
+    "regionId": 13,
+    "embedMapCenter": [2.355, 48.88, 7.0]
+  }
+]
+```
 
-### 2. `GET /api/networks/{network_id}?withDetails=true`
-Retourne la fiche détaillée d'un réseau enrichie de ses lignes actives (`lines`) pour compatibilité native avec `BusTrackerClient` et `spotted-api`.
+### 2. `GET /api/networks/{network_id}?withDetails=true` & `GET /api/networks/{network_id}/lines`
+Retourne la fiche détaillée d'un réseau enrichie de ses lignes actives (`lines`) ou la liste brute de ses lignes pour compatibilité native avec `NetworkService::getNetworkLines` et `BusTrackerClient` :
+```json
+{
+  "id": 10001,
+  "ref": "FR:Network:Eurostar",
+  "name": "Eurostar",
+  "lines": [
+    {
+      "id": 1010,
+      "networkId": 10001,
+      "ref": "FR:Line:Eurostar",
+      "lineRef": "FR:Line:Eurostar",
+      "references": ["FR:Line:Eurostar", "EUROSTAR:Line:1"],
+      "number": "Eurostar",
+      "color": "116BFE",
+      "textColor": "FFFFFF",
+      "sortOrder": 1,
+      "onlineMarkerCount": 14,
+      "onlineVehicleCount": 14
+    }
+  ]
+}
+```
 
-### 3. `GET /api/vehicle-journeys/markers`
-Flux temps réel allégé pour la supervision et la cartographie, avec filtrage optionnel par bounding box.
+### 3. `GET /api/lines` & `GET /api/lines/{line_id}`
+Fiche détaillée d'une ligne ferroviaire unifiée compatible avec le contrat `LineService::getLine` et `Line::fromArray` de `spotted-api`.
+
+### 4. `GET /api/vehicle-journeys/markers`
+Flux temps réel allégé pour la supervision et la cartographie, avec filtrage optionnel par bounding box (utilisé par `SyncMarkersCommand` et `MarkerController`) :
 - **Query params :** `swLat`, `swLon`, `neLat`, `neLon` (optionnels)
 - **Réponse :**
   ```json
@@ -106,24 +152,81 @@ Flux temps réel allégé pour la supervision et la cartographie, avec filtrage 
         }
       }
     ],
-    "at": "2026-10-06T15:58:00Z"
+    "at": "2026-10-23T21:00:00Z"
   }
   ```
 
-### 4. `GET /api/vehicle-journeys/{journey_id}`
-Fiche détaillée d'un trajet de train avec arrêts formatés selon la nomenclature NeTEx/UIC (`FR:StopPoint:{CodeUIC}`, `BE:StopPoint:{CodeUIC}`), horaires ISO 8601, retards, voies/quais et position temps réel.
-
-### 5. `GET /api/vehicle-journeys/{journey_id}/paths` *(ou `/api/paths/{path_id}`)*
-Tracé ferroviaire 3D précis du train avec distance cumulée en mètres compatible `Path.php` (`spotted-api`) :
-- **Réponse :**
-  ```json
-  {
-    "path": {
-      "p": [[50.1867, 2.8708, 0.0], [50.1912, 2.8754, 150.2]],
-      "cancelled": []
+### 5. `GET /api/vehicle-journeys/{journey_id}`
+Fiche détaillée complète d'un trajet de train consommée par `JourneyDetailsService::getJourneyDetails` :
+- **Arrêts (`calls`)** : normalisés NeTEx/UIC (`FR:StopPoint:{CodeUIC}`, `BE:StopPoint:{CodeUIC}`) permettant l'extraction de l'UIC pour `PlatformService / guessPlatform`.
+- **Véhicule (`vehicle`)** : conforme à `VehicleDetails::fromArray` (`id`, `number`, `ref`, `designation`, `type: "TRAIN"`, `airConditioning: "PRESENT"`, `usbPorts: true`).
+- **Accessibilité & Occupation** : exposition de `wheelchairAccessible`, `bikesAllowed` et `occupancy`.
+```json
+{
+  "id": "FR:Network:Eurostar::VehicleJourney:9028-1006",
+  "countryCode": "FR",
+  "lineId": 1010,
+  "lineRef": "FR:Line:Eurostar",
+  "destination": "London St Pancras",
+  "networkId": 10001,
+  "networkRef": "FR:Network:Eurostar",
+  "journeyRef": "FR:Network:Eurostar::VehicleJourney:9028-1006",
+  "serviceDate": "2026-10-23",
+  "occupancy": "UNKNOWN",
+  "wheelchairAccessible": true,
+  "bikesAllowed": true,
+  "vehicle": {
+    "id": "9028",
+    "number": "9028",
+    "ref": "FR:Network:Eurostar::Vehicle:9028",
+    "designation": "Eurostar e320",
+    "type": "TRAIN",
+    "airConditioning": "PRESENT",
+    "usbPorts": true
+  },
+  "position": {
+    "latitude": 50.1867,
+    "longitude": 2.8708,
+    "bearing": 182.4,
+    "atStop": false,
+    "type": "COMPUTED",
+    "distanceTraveled": 125.4,
+    "recordedAt": "2026-10-23T21:00:00Z"
+  },
+  "calls": [
+    {
+      "aimedTime": "2026-10-23T15:00:00+02:00",
+      "expectedTime": "2026-10-23T15:02:00+02:00",
+      "aimedArrivalTime": null,
+      "expectedArrivalTime": null,
+      "stopRef": "FR:StopPoint:8727100",
+      "stopName": "Paris Gare du Nord",
+      "stopOrder": 0,
+      "distanceTraveled": 0.0,
+      "latitude": 48.8809,
+      "longitude": 2.3553,
+      "platformName": null,
+      "callStatus": "SCHEDULED",
+      "flags": ["NO_DROP_OFF"]
     }
+  ],
+  "updatedAt": "2026-10-23T21:00:00Z"
+}
+```
+
+### 6. `GET /api/vehicle-journeys/{journey_id}/paths` *(ou `/api/paths/{path_id}`)*
+Tracé ferroviaire 3D précis du train avec distance cumulée en mètres compatible avec `PathService::getPath` et `Path::fromArray` :
+```json
+{
+  "path": {
+    "p": [
+      [50.1867, 2.8708, 0.0],
+      [50.1912, 2.8754, 150.2]
+    ],
+    "cancelled": []
   }
-  ```
+}
+```
 
 ---
 
