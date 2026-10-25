@@ -2,6 +2,7 @@ services:
   eurostar-sleeper-api:
     container_name: eurostar-sleeper-api
     build: .
+    command: ["python", "-m", "app.main"]
     restart: unless-stopped
     volumes:
       - .:/app
