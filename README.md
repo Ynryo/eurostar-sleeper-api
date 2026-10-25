@@ -240,7 +240,7 @@ git clone https://github.com/Ynryo/eurostar-sleeper-api.git
 cd eurostar-sleeper-api
 
 # Démarrer le conteneur en arrière-plan
-docker compose up -d
+docker compose up -d --build
 ```
 L'API et Swagger sont immédiatement accessibles sur **`http://localhost:8080/docs`**.
 
