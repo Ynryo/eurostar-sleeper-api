@@ -1,0 +1,11 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="API Spotted" type="docker-deploy" factoryName="docker-compose.yml" activateToolWindowBeforeRun="false" server-name="Docker">
+    <deployment type="docker-compose.yml">
+      <settings>
+        <option name="sourceFilePath" value="../spotted-api/docker-compose.yaml" />
+        <option name="upDetach" value="true" />
+      </settings>
+    </deployment>
+    <method v="2" />
+  </configuration>
+</component>
